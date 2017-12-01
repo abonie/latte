@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module TypeCheck where
 
 import Control.Monad (when)
@@ -9,8 +11,16 @@ import AbsLatte
 
 data TypeError = TypeMismatch Type Type deriving (Show, Eq)
 
-type TCheck a = ExceptT TypeError (Reader Env) a
+class Monad m => MonadTypeCheck m where
+    matchTypes :: Type -> Type -> m ()
+    runTypeCheck :: m a -> Either TypeError a
 
+type TCheck = ExceptT TypeError (Reader Env)
+
+instance MonadTypeCheck TCheck where
+    matchTypes t1 t2 = when (t1 /= t2) (throwError $ TypeMismatch t1 t2)
+    runTypeCheck tc = runReader (runExceptT tc) Map.empty
+        
 type Env = Map.Map Ident Type
 
 typeCheck :: Program -> TCheck ()
@@ -39,20 +49,20 @@ checkStmt (Decl typ ((NoInit ident):rest)) = do
     local (Map.insert ident typ) (checkStmt (Decl typ rest))
 checkStmt (Decl typ ((Init ident expr):rest)) = do
     exprType <- checkExpr expr
-    when (exprType /= typ) (throwError $ TypeMismatch typ exprType)
+    matchTypes exprType typ
     local (Map.insert ident typ) (checkStmt $ Decl typ rest)
 
 checkStmt (Ass ident expr) = do
     exprType <- checkExpr expr
     varType <- asks $ flip (!) $ ident  -- TODO
-    when (varType /= exprType) (throwError $ TypeMismatch varType exprType)
+    matchTypes varType exprType
     ask
 
 checkStmt (Incr ident) = do
     varType <- asks $ flip (!) $ ident
-    when (varType /= Int) (throwError $ TypeMismatch varType Int)
+    matchTypes varType Int
     ask
-    
+
 checkStmt (Decr ident) = checkStmt (Incr ident) -- XXX?
 
 checkStmt (Ret expr) = ask -- TODO
@@ -61,7 +71,7 @@ checkStmt VRet = ask -- TODO
 
 checkStmt (Cond expr stmt) = do
     exprType <- checkExpr expr
-    when (exprType /= Bool) (throwError $ TypeMismatch exprType Bool)
+    matchTypes exprType Bool
     checkStmt stmt
     ask
 
