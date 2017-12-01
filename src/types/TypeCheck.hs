@@ -2,15 +2,14 @@ module TypeCheck where
 
 import Control.Monad (when)
 import Control.Monad.Except
---import Control.Monad.State
 import Control.Monad.Reader
 import Data.Map as Map
 import AbsLatte
 
 
-data TError = TypeMismatch Type Type deriving Show
+data TypeError = TypeMismatch Type Type deriving (Show, Eq)
 
-type TCheck a = ExceptT TError (Reader Env) a
+type TCheck a = ExceptT TypeError (Reader Env) a
 
 type Env = Map.Map Ident Type
 
