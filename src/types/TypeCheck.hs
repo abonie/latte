@@ -8,19 +8,23 @@ import Control.Monad.Reader
 import Data.Map as Map
 import AbsLatte
 
+-- TODO XXX check for void and function types
+--
 
 data TypeError = TypeMismatch Type Type | UndeclaredVariable String deriving (Show, Eq)
 
 
 class Monad m => MonadTypeCheck m where
-    matchTypes :: Type -> Type -> m ()
+    matchTypes :: Type -> Type -> m Type
     typeof :: Ident -> m Type
     runTypeCheck :: m a -> Either TypeError a
 
 type TCheck = ExceptT TypeError (Reader Env)
 
 instance MonadTypeCheck TCheck where
-    matchTypes t1 t2 = when (t1 /= t2) (throwError $ TypeMismatch t1 t2)
+    matchTypes t1 t2 = do
+        when (t1 /= t2) (throwError $ TypeMismatch t1 t2)
+        return t1
 
     typeof var@(Ident name) = do
         maybeType <- asks $ Map.lookup var
@@ -35,7 +39,17 @@ type Env = Map.Map Ident Type
 
 typeCheck :: Program -> TCheck ()
 typeCheck (Program fdefs) = do
-    mapM_ checkFDef fdefs
+    env <- funcTypes fdefs  -- TODO rename refactor
+    local (const env) (mapM_ checkFDef fdefs)
+
+
+funcTypes :: [TopDef] -> TCheck Env
+funcTypes [] = ask
+
+funcTypes ((FnDef retType fname args body):defs) = do
+    env <- ask
+    let argTypes = Prelude.map (\(Arg t _) -> t) args
+    local (Map.insert fname $ Fun retType argTypes) (funcTypes defs)
 
 
 checkFDef :: TopDef -> TCheck ()
@@ -117,14 +131,37 @@ checkExpr (EAdd expr1 Plus expr2) = do
     unless (elem t1 [Int, Str]) (throwError $ TypeMismatch t1 Int) -- XXX
     return t1
 
--- checkExpr (EAdd expr1 Minus expr2) = do
---     t1 <- checkExpr expr1
---     t2 <- checkExpr expr2
---     matchTypes t1 t2
---     matchTypes t1 Int
+checkExpr (EAdd expr1 Minus expr2) = do
+    t1 <- checkExpr expr1
+    t2 <- checkExpr expr2
+    matchTypes t1 t2
+    matchTypes t1 Int
 
 checkExpr (ERel expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2
-    return t1
+
+checkExpr (EMul expr1 op expr2) = do
+    t1 <- checkExpr expr1
+    t2 <- checkExpr expr2
+    matchTypes t1 t2
+    matchTypes t1 Int
+
+checkExpr (Not expr) = do
+    typ <- checkExpr expr
+    matchTypes typ Bool
+
+checkExpr (Neg expr) = do
+    typ <- checkExpr expr
+    matchTypes typ Int
+
+checkExpr (EAnd expr1 expr2) = do
+    t1 <- checkExpr expr1
+    t2 <- checkExpr expr2
+    matchTypes t1 t2  -- TODO what can be &&-ed?
+
+checkExpr (EOr expr1 expr2) = checkExpr (EAnd expr1 expr2) -- XXX
+
+--checkExpr (EApp fident args) = do
+--    -- TODO
