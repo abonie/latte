@@ -2,24 +2,28 @@
 
 module TypeCheck where
 
-import Control.Monad (when)
+import Control.Monad (when, void)
 import Control.Monad.Except
-import Control.Monad.Reader
+import Control.Monad.State
 import Data.Map as Map
 import AbsLatte
 
 -- TODO XXX check for void and function types
 --
 
-data TypeError = TypeMismatch Type Type | UndeclaredVariable String deriving (Show, Eq)
+data TypeError = TypeMismatch Type Type
+               | UndeclaredVariable String
+               | MultipleDeclarations  -- TODO
+    deriving (Show, Eq)
 
 
 class Monad m => MonadTypeCheck m where
     matchTypes :: Type -> Type -> m Type
     typeof :: Ident -> m Type
+    declare :: Type -> Ident -> m ()
     runTypeCheck :: m a -> Either TypeError a
 
-type TCheck = ExceptT TypeError (Reader Env)
+type TCheck = ExceptT TypeError (State Env)
 
 instance MonadTypeCheck TCheck where
     matchTypes t1 t2 = do
@@ -27,90 +31,87 @@ instance MonadTypeCheck TCheck where
         return t1
 
     typeof var@(Ident name) = do
-        maybeType <- asks $ Map.lookup var
+        maybeType <- gets $ Map.lookup var
         case maybeType of
             Nothing -> throwError $ UndeclaredVariable name
             Just t -> return t
 
-    runTypeCheck tc = runReader (runExceptT tc) Map.empty
+    declare typ var = do
+        env <- get
+        when (Map.member var env) (throwError MultipleDeclarations)
+        modify $ Map.insert var typ
+
+    runTypeCheck tc = evalState (runExceptT tc) Map.empty
 
 
 type Env = Map.Map Ident Type
 
 typeCheck :: Program -> TCheck ()
 typeCheck (Program fdefs) = do
-    env <- funcTypes fdefs  -- TODO rename refactor
-    local (const env) (mapM_ checkFDef fdefs)
+    mapM_ addFTypes fdefs
+    mapM_ checkFDef fdefs
 
 
-funcTypes :: [TopDef] -> TCheck Env
-funcTypes [] = ask
-
-funcTypes ((FnDef retType fname args body):defs) = do
-    env <- ask
+addFTypes :: TopDef -> TCheck ()
+addFTypes (FnDef retType fname args _) = do
     let argTypes = Prelude.map (\(Arg t _) -> t) args
-    local (Map.insert fname $ Fun retType argTypes) (funcTypes defs)
+    modify $ Map.insert fname $ Fun retType argTypes
 
 
 checkFDef :: TopDef -> TCheck ()
 checkFDef (FnDef retType fname args body) = do
-    local (Map.union $ Map.fromList $ Prelude.map (\(Arg t i) -> (i, t)) args) (checkBlock body)
+    -- TODO push block
+    mapM_ (\(Arg t i) -> declare t i) args
+    checkBlock body
+    -- TODO pop block
 
 
 checkBlock :: Block -> TCheck ()
-checkBlock (Block (st:tl)) = do
-    env <- checkStmt st
-    local (const env) (checkBlock (Block tl))
+checkBlock (Block stmts) = do
+    -- TODO push block
+    mapM_ checkStmt stmts
+    -- TODO pop block
 
-checkBlock (Block []) = return ()
 
+checkStmt :: Stmt -> TCheck ()
+checkStmt Empty = return ()
 
-checkStmt :: Stmt -> TCheck Env
-checkStmt Empty = ask
-
-checkStmt (Decl _ []) = ask
-checkStmt (Decl typ ((NoInit ident):rest)) = do
-    local (Map.insert ident typ) (checkStmt (Decl typ rest))
-checkStmt (Decl typ ((Init ident expr):rest)) = do
-    exprType <- checkExpr expr
-    matchTypes exprType typ
-    local (Map.insert ident typ) (checkStmt $ Decl typ rest)
+checkStmt (Decl typ items) = mapM_ foo items where
+    foo (NoInit ident) = declare typ ident
+    foo (Init ident expr) = do
+        exprType <- checkExpr expr
+        matchTypes exprType typ
+        declare typ ident
 
 checkStmt (Ass ident expr) = do
     exprType <- checkExpr expr
     varType <- typeof ident
-    matchTypes varType exprType
-    ask
+    void $ matchTypes varType exprType
 
 checkStmt (Incr ident) = do
-    varType <- asks $ flip (!) $ ident
-    matchTypes varType Int
-    ask
+    varType <- typeof ident
+    void $ matchTypes varType Int
 
 checkStmt (Decr ident) = checkStmt (Incr ident) -- XXX?
 
-checkStmt (Ret expr) = ask -- TODO
+checkStmt (Ret expr) = return ()  -- TODO
 
-checkStmt VRet = ask -- TODO
+checkStmt VRet = return () -- TODO
 
 checkStmt (Cond expr stmt) = do
     exprType <- checkExpr expr
     matchTypes exprType Bool
     checkStmt stmt
-    ask
 
 checkStmt (CondElse expr ifStmt elseStmt) = do
     checkStmt $ Cond expr ifStmt  -- XXX
     checkStmt elseStmt
-    ask
 
 checkStmt (While expr stmt) = do
     checkStmt $ Cond expr stmt  -- XX
-    ask
 
 checkStmt (SExp expr) = do
-    checkExpr expr
-    ask
+    void $ checkExpr expr
 
 
 checkExpr :: Expr -> TCheck Type
