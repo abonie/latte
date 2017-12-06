@@ -48,12 +48,12 @@ type Env = Map.Map Ident Type
 
 typeCheck :: Program -> TCheck ()
 typeCheck (Program fdefs) = do
-    mapM_ addFTypes fdefs
+    mapM_ addFType fdefs
     mapM_ checkFDef fdefs
 
 
-addFTypes :: TopDef -> TCheck ()
-addFTypes (FnDef retType fname args _) = do
+addFType :: TopDef -> TCheck ()
+addFType (FnDef retType fname args _) = do
     let argTypes = Prelude.map (\(Arg t _) -> t) args
     modify $ Map.insert fname $ Fun retType argTypes
 
@@ -164,5 +164,7 @@ checkExpr (EAnd expr1 expr2) = do
 
 checkExpr (EOr expr1 expr2) = checkExpr (EAnd expr1 expr2) -- XXX
 
---checkExpr (EApp fident args) = do
---    -- TODO
+checkExpr (EApp fident args) = do
+    (Fun ret args') <- typeof fident
+    -- TODO check args
+    return ret
