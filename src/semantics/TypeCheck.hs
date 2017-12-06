@@ -55,14 +55,16 @@ typeCheck (Program fdefs) = do
 addFType :: TopDef -> TCheck ()
 addFType (FnDef retType fname args _) = do
     let argTypes = Prelude.map (\(Arg t _) -> t) args
-    modify $ Map.insert fname $ Fun retType argTypes
+    declare (Fun retType argTypes) fname
 
 
 checkFDef :: TopDef -> TCheck ()
 checkFDef (FnDef retType fname args body) = do
     -- TODO push block
     mapM_ (\(Arg t i) -> declare t i) args
+    declare retType $ Ident "$ret" -- TODO XXX
     checkBlock body
+    modify $ Map.delete $ Ident "$ret"
     -- TODO pop block
 
 
@@ -94,9 +96,14 @@ checkStmt (Incr ident) = do
 
 checkStmt (Decr ident) = checkStmt (Incr ident) -- XXX?
 
-checkStmt (Ret expr) = return ()  -- TODO
+checkStmt (Ret expr) = do
+    exprType <- checkExpr expr
+    retType <- typeof $ Ident "$ret"  -- XXX
+    void $ matchTypes retType exprType
 
-checkStmt VRet = return () -- TODO
+checkStmt VRet = do
+    retType <- typeof $ Ident "$ret"  -- XXX
+    void $ matchTypes retType Void
 
 checkStmt (Cond expr stmt) = do
     exprType <- checkExpr expr
@@ -165,6 +172,7 @@ checkExpr (EAnd expr1 expr2) = do
 checkExpr (EOr expr1 expr2) = checkExpr (EAnd expr1 expr2) -- XXX
 
 checkExpr (EApp fident args) = do
-    (Fun ret args') <- typeof fident
-    -- TODO check args
+    ftype@(Fun ret _) <- typeof fident
+    argTypes <- mapM checkExpr args
+    matchTypes ftype (Fun ret argTypes)
     return ret
