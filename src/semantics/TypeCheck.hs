@@ -14,6 +14,7 @@ import AbsLatte
 data TypeError = TypeMismatch Type Type
                | UndeclaredVariable String
                | MultipleDeclarations  -- TODO
+               | NoReturn
     deriving (Show, Eq)
 
 
@@ -46,6 +47,15 @@ instance MonadTypeCheck TCheck where
 
 type Env = Map.Map Ident Type
 
+
+returns :: Stmt -> Bool
+returns (Ret _) = True
+returns VRet = True
+returns (CondElse _ ifStmt elseStmt) = returns ifStmt && returns elseStmt
+returns (BStmt (Block stmts)) = any returns stmts
+returns _ = False
+
+
 typeCheck :: Program -> TCheck ()
 typeCheck (Program fdefs) = do
     mapM_ addFType fdefs
@@ -64,6 +74,7 @@ checkFDef (FnDef retType fname args body) = do
     mapM_ (\(Arg t i) -> declare t i) args
     declare retType $ Ident "$ret" -- TODO XXX
     checkBlock body
+    unless (returns $ BStmt body) (throwError NoReturn)
     modify $ Map.delete $ Ident "$ret"
     -- TODO pop block
 

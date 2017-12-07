@@ -22,7 +22,7 @@ tests = [
     ("bad018.lat", "bad018.lat", TypeMismatch (Fun Int [Int, Int]) (Fun Int [Int])),
     ("bad019.lat", "bad019.lat", TypeMismatch (Fun Int [Int]) (Fun Int [Int, Int])),
     ("bad020.lat", "bad020.lat", TypeMismatch Str Bool),
-    ("bad021.lat", "bad021.lat", TypeMismatch Str Bool),
+    ("bad021.lat", "bad021.lat", NoReturn),
     ("bad022.lat", "bad022.lat", TypeMismatch Str Int),
     ("bad023.lat", "bad023.lat", TypeMismatch Int Str),
     ("bad026.lat", "bad026.lat", TypeMismatch Int Str),
