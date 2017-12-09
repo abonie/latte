@@ -30,13 +30,13 @@ tests = [
 
 
 main = do
-    args <- mapM foo tests
+    args <- mapM parseTests tests
     when (any (\(x,_,_) -> isBad x) args)
          (error $ show $ head $ filter isBad $ map (\(x, _, _) -> x) args)
     runTestTT $ TestList $ map (\(Ok p, l, e) -> testTypeMismatch p l e) args
   where
-    foo :: (FilePath, String, TypeError) -> IO (Err PProgram, String, TypeError)
-    foo (filename, label, err) = do
+    parseTests :: (FilePath, String, TypeError) -> IO (Err PProgram, String, TypeError)
+    parseTests (filename, label, err) = do
         f <- readFile filename
         return (pProgram $ tokens f, label, err)
 
@@ -50,4 +50,15 @@ testTypeMismatch :: PProgram -> String -> TypeError -> Test
 testTypeMismatch prog label terr = TestLabel label $ TestCase (
     case runTypeCheck $ typeCheck prog of
         Right _ -> assertFailure $ "Expected " ++ (show terr) ++ " error, got none"
-        Left err -> assertEqual ("Expected " ++ (show terr) ++ ", got " ++ (show err)) err terr)
+        Left err -> assertBool ("Expected " ++ (show terr) ++ ", got " ++ (show err)) (matchError err terr))
+
+
+matchError :: TypeError -> TypeError -> Bool
+matchError (TypeMismatch t1 t2) (TypeMismatch u1 u2) = let
+    t1' = rmpos t1
+    t2' = rmpos t2
+    u1' = rmpos u1
+    u2' = rmpos u2
+    in (TypeMismatch t1' t2') == (TypeMismatch u1' u2')
+
+matchError a b = a == b

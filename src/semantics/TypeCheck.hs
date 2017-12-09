@@ -20,7 +20,7 @@ data TypeError = TypeMismatch PType PType
 
 
 class Monad m => MonadTypeCheck m where
-    matchTypes :: Type a -> Type b -> m PType
+    matchTypes :: PType -> PType -> m PType
     typeof :: Ident -> m PType
     declare :: PType -> Ident -> m ()
     runTypeCheck :: m a -> Either TypeError a
@@ -29,10 +29,10 @@ type TCheck = ExceptT TypeError (State Env)
 
 instance MonadTypeCheck TCheck where
     matchTypes t1 t2 = do
-        let t1' = (nopos <$ t1) :: PType
-        let t2' = (nopos <$ t2) :: PType
-        when (t1' /= t2') (throwError $ TypeMismatch t1' t2')
-        return t1'
+        let t1' = nopos <$ t1
+        let t2' = nopos <$ t2
+        when (t1' /= t2') (throwError $ TypeMismatch t1 t2)
+        return t1
 
     typeof var@(Ident name) = do
         maybeType <- gets $ Map.lookup var
@@ -106,7 +106,7 @@ checkStmt (Ass _ ident expr) = do
 
 checkStmt (Incr _ ident) = do
     varType <- typeof ident
-    void $ matchTypes varType (Int nopos)
+    void $ matchTypes varType pInt
 
 checkStmt (Decr ni ident) = checkStmt (Incr ni ident) -- XXX?
 
@@ -117,11 +117,11 @@ checkStmt (Ret _ expr) = do
 
 checkStmt (VRet _) = do
     retType <- typeof $ Ident "$ret"  -- XXX
-    void $ matchTypes retType (Void nopos)
+    void $ matchTypes retType pVoid
 
 checkStmt (Cond _ expr stmt) = do
     exprType <- checkExpr expr
-    matchTypes exprType (Bool nopos)
+    matchTypes exprType pBool
     checkStmt stmt
 
 checkStmt (CondElse ni expr ifStmt elseStmt) = do
@@ -151,14 +151,14 @@ checkExpr (EAdd _ expr1 (Plus _) expr2) = do
     t2 <- checkExpr expr2
     matchTypes t1 t2
     let t1' = rmpos t1
-    unless (elem t1' [(Int ()), (Str ())]) (throwError $ TypeMismatch t1 (Int nopos)) -- XXX
+    unless (elem t1' [pInt, pStr]) (throwError $ TypeMismatch t1 pInt) -- XXX
     return t1
 
 checkExpr (EAdd _ expr1 (Minus ni) expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2
-    matchTypes t1 $ Int nopos
+    matchTypes t1 pInt
 
 checkExpr (ERel _ expr1 op expr2) = do
     t1 <- checkExpr expr1
@@ -169,15 +169,15 @@ checkExpr (EMul _ expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2
-    matchTypes t1 $ Int nopos
+    matchTypes t1 pInt
 
 checkExpr (Not _ expr) = do
     typ <- checkExpr expr
-    matchTypes typ $ Bool nopos
+    matchTypes typ pBool
 
 checkExpr (Neg _ expr) = do
     typ <- checkExpr expr
-    matchTypes typ $ Int nopos
+    matchTypes typ pInt
 
 checkExpr (EAnd _ expr1 expr2) = do
     t1 <- checkExpr expr1
