@@ -15,9 +15,12 @@ tests = [
     ("test3.lat", "test3.lat", TypeMismatch pStr pInt),
     ("test4.lat", "test4.lat", TypeMismatch pInt pBool),
     ("test5.lat", "test5.lat", TypeMismatch pInt pVoid),
+    ("test6.lat", "test6.lat", NoReturn),
     ("bad003.lat", "bad003.lat", MultipleDeclarations),
     ("bad007.lat", "bad007.lat", MultipleDeclarations),
+    ("bad008.lat", "bad008.lat", NoReturn),
     ("bad010.lat", "bad010.lat", TypeMismatch pInt pVoid),
+    ("bad012.lat", "bad012.lat", NoReturn),
     ("bad017.lat", "bad017.lat", TypeMismatch (pFun pInt [pInt]) (pFun pInt [])),
     ("bad018.lat", "bad018.lat", TypeMismatch (pFun pInt [pInt, pInt]) (pFun pInt [pInt])),
     ("bad019.lat", "bad019.lat", TypeMismatch (pFun pInt [pInt]) (pFun pInt [pInt, pInt])),
@@ -25,6 +28,8 @@ tests = [
     ("bad021.lat", "bad021.lat", NoReturn),
     ("bad022.lat", "bad022.lat", TypeMismatch pStr pInt),
     ("bad023.lat", "bad023.lat", TypeMismatch pInt pStr),
+    ("bad024.lat", "bad024.lat", NoReturn),
+    ("bad025.lat", "bad025.lat", NoReturn),
     ("bad026.lat", "bad026.lat", TypeMismatch pInt pStr),
     ("bad027.lat", "bad027.lat", TypeMismatch pStr pInt)]
 

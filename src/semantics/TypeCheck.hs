@@ -92,6 +92,8 @@ checkBlock (Block _ stmts) = do
 checkStmt :: PStmt -> TCheck ()
 checkStmt (Empty _) = return ()
 
+checkStmt (BStmt _ block) = checkBlock block
+
 checkStmt (Decl _ typ items) = mapM_ foo items where
     foo (NoInit _ ident) = declare typ ident
     foo (Init _ ident expr) = do
@@ -160,10 +162,11 @@ checkExpr (EAdd _ expr1 (Minus ni) expr2) = do
     matchTypes t1 t2
     matchTypes t1 pInt
 
-checkExpr (ERel _ expr1 op expr2) = do
+checkExpr (ERel ni expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2
+    return $ Bool ni
 
 checkExpr (EMul _ expr1 op expr2) = do
     t1 <- checkExpr expr1
