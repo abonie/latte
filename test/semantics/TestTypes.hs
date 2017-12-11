@@ -40,10 +40,10 @@ main = do
          (error $ show $ head $ filter isBad $ map (\(x, _, _) -> x) args)
     runTestTT $ TestList $ map (\(Ok p, l, e) -> testTypeMismatch p l e) args
   where
-    parseTests :: (FilePath, String, TypeError) -> IO (Err PProgram, String, TypeError)
+    parseTests :: (FilePath, String, PosInfo -> TypeError) -> IO (Err PProgram, String, TypeError)
     parseTests (filename, label, err) = do
         f <- readFile filename
-        return (pProgram $ tokens f, label, err)
+        return (pProgram $ tokens f, label, err nopos)
 
 
 isBad :: Err a -> Bool
@@ -59,11 +59,16 @@ testTypeMismatch prog label terr = TestLabel label $ TestCase (
 
 
 matchError :: TypeError -> TypeError -> Bool
-matchError (TypeMismatch t1 t2) (TypeMismatch u1 u2) = let
+matchError (TypeMismatch t1 t2 _) (TypeMismatch u1 u2 _) = let
     t1' = rmpos t1
     t2' = rmpos t2
     u1' = rmpos u1
     u2' = rmpos u2
-    in (TypeMismatch t1' t2') == (TypeMismatch u1' u2')
+    in (TypeMismatch t1' t2' nopos) == (TypeMismatch u1' u2' nopos)
 
-matchError a b = a == b
+matchError a b = (rmposerr a) == (rmposerr b)
+
+rmposerr :: TypeError -> TypeError
+rmposerr (NoReturn _) = NoReturn nopos
+rmposerr (MultipleDeclarations _) = MultipleDeclarations nopos
+rmposerr (UndeclaredVariable s _) = UndeclaredVariable s nopos

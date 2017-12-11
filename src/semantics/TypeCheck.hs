@@ -12,37 +12,37 @@ import AbsLatte
 --
 
 
-data TypeError = TypeMismatch PType PType
-               | UndeclaredVariable String
-               | MultipleDeclarations  -- TODO
-               | NoReturn
+data TypeError = TypeMismatch PType PType PosInfo
+               | UndeclaredVariable String PosInfo
+               | MultipleDeclarations PosInfo
+               | NoReturn PosInfo
     deriving (Show, Eq)
 
 
 class Monad m => MonadTypeCheck m where
-    matchTypes :: PType -> PType -> m PType
-    typeof :: Ident -> m PType
-    declare :: PType -> Ident -> m ()
+    matchTypes :: PType -> PType -> PosInfo -> m PType
+    typeof :: Ident -> PosInfo -> m PType
+    declare :: PType -> Ident -> PosInfo -> m ()
     runTypeCheck :: m a -> Either TypeError a
 
 type TCheck = ExceptT TypeError (State Env)
 
 instance MonadTypeCheck TCheck where
-    matchTypes t1 t2 = do
-        let t1' = nopos <$ t1
-        let t2' = nopos <$ t2
-        when (t1' /= t2') (throwError $ TypeMismatch t1 t2)
+    matchTypes t1 t2 pos = do
+        let t1' = rmpos t1
+        let t2' = rmpos t2
+        when (t1' /= t2') (throwError $ TypeMismatch t1 t2 pos)
         return t1
 
-    typeof var@(Ident name) = do
+    typeof var@(Ident name) pos = do
         maybeType <- gets $ Map.lookup var
         case maybeType of
-            Nothing -> throwError $ UndeclaredVariable name
+            Nothing -> throwError $ UndeclaredVariable name pos
             Just t -> return t
 
-    declare typ var = do
+    declare typ var pos = do
         env <- get
-        when (Map.member var env) (throwError MultipleDeclarations)
+        when (Map.member var env) (throwError $ MultipleDeclarations pos)
         modify $ Map.insert var typ
 
     runTypeCheck tc = evalState (runExceptT tc) Map.empty
@@ -66,18 +66,20 @@ typeCheck (Program _ fdefs) = do
 
 
 addFType :: PTopDef -> TCheck ()
-addFType (FnDef ni retType fname args _) = do
+addFType (FnDef pos retType fname args _) = do
     let argTypes = Prelude.map (\(Arg _ t _) -> t) args
-    declare (Fun ni retType argTypes) fname
+    declare (Fun pos retType argTypes) fname pos
 
 
 checkFDef :: PTopDef -> TCheck ()
-checkFDef (FnDef _ retType fname args body) = do
+checkFDef (FnDef pos retType fname args body) = do
     -- TODO push block
-    mapM_ (\(Arg _ t i) -> declare t i) args
-    declare retType $ Ident "$ret" -- TODO XXX
+    mapM_ (\(Arg pos t i) -> declare t i pos) args
+    declare retType (Ident "$ret") pos -- TODO XXX
     checkBlock body
-    unless (returns $ BStmt nopos body) (throwError NoReturn)
+    -- XXX
+    unless (rmpos retType == pVoid || (returns $ BStmt nopos body))
+           (throwError $ NoReturn pos)
     modify $ Map.delete $ Ident "$ret"
     -- TODO pop block
 
@@ -95,102 +97,102 @@ checkStmt (Empty _) = return ()
 checkStmt (BStmt _ block) = checkBlock block
 
 checkStmt (Decl _ typ items) = mapM_ foo items where
-    foo (NoInit _ ident) = declare typ ident
-    foo (Init _ ident expr) = do
+    foo (NoInit pos ident) = declare typ ident pos
+    foo (Init pos ident expr) = do
         exprType <- checkExpr expr
-        matchTypes exprType typ
-        declare typ ident
+        matchTypes exprType typ pos
+        declare typ ident pos
 
-checkStmt (Ass _ ident expr) = do
+checkStmt (Ass pos ident expr) = do
     exprType <- checkExpr expr
-    varType <- typeof ident
-    void $ matchTypes varType exprType
+    varType <- typeof ident pos
+    void $ matchTypes varType exprType pos
 
-checkStmt (Incr _ ident) = do
-    varType <- typeof ident
-    void $ matchTypes varType pInt
+checkStmt (Incr pos ident) = do
+    varType <- typeof ident pos
+    void $ matchTypes varType pInt pos
 
-checkStmt (Decr ni ident) = checkStmt (Incr ni ident) -- XXX?
+checkStmt (Decr pos ident) = checkStmt (Incr pos ident) -- XXX?
 
-checkStmt (Ret _ expr) = do
+checkStmt (Ret pos expr) = do
     exprType <- checkExpr expr
-    retType <- typeof $ Ident "$ret"  -- XXX
-    void $ matchTypes retType exprType
+    retType <- typeof (Ident "$ret") pos  -- XXX
+    void $ matchTypes retType exprType pos
 
-checkStmt (VRet _) = do
-    retType <- typeof $ Ident "$ret"  -- XXX
-    void $ matchTypes retType pVoid
+checkStmt (VRet pos) = do
+    retType <- typeof (Ident "$ret") pos  -- XXX
+    void $ matchTypes retType pVoid pos
 
-checkStmt (Cond _ expr stmt) = do
+checkStmt (Cond pos expr stmt) = do
     exprType <- checkExpr expr
-    matchTypes exprType pBool
+    matchTypes exprType pBool pos
     checkStmt stmt
 
-checkStmt (CondElse ni expr ifStmt elseStmt) = do
-    checkStmt $ Cond ni expr ifStmt  -- XXX
+checkStmt (CondElse pos expr ifStmt elseStmt) = do
+    checkStmt $ Cond pos expr ifStmt  -- XXX
     checkStmt elseStmt
 
-checkStmt (While ni expr stmt) = do
-    checkStmt $ Cond ni expr stmt  -- XX
+checkStmt (While pos expr stmt) = do
+    checkStmt $ Cond pos expr stmt  -- XX
 
 checkStmt (SExp _ expr) = do
     void $ checkExpr expr
 
 
 checkExpr :: PExpr -> TCheck PType
-checkExpr (EVar _ ident) = typeof ident
+checkExpr (EVar pos ident) = typeof ident pos
 
-checkExpr (ELitTrue ni) = return $ Bool ni
+checkExpr (ELitTrue pos) = return $ Bool pos
 
-checkExpr (ELitFalse ni) = return $ Bool ni
+checkExpr (ELitFalse pos) = return $ Bool pos
 
-checkExpr (ELitInt ni _) = return $ Int ni
+checkExpr (ELitInt pos _) = return $ Int pos
 
-checkExpr (EString ni _) = return $ Str ni
+checkExpr (EString pos _) = return $ Str pos
 
-checkExpr (EAdd _ expr1 (Plus _) expr2) = do
+checkExpr (EAdd pos expr1 (Plus _) expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
-    matchTypes t1 t2
+    matchTypes t1 t2 pos
     let t1' = rmpos t1
-    unless (elem t1' [pInt, pStr]) (throwError $ TypeMismatch t1 pInt) -- XXX
+    unless (elem t1' [pInt, pStr]) (throwError $ TypeMismatch t1 pInt pos) -- XXX
     return t1
 
-checkExpr (EAdd _ expr1 (Minus ni) expr2) = do
+checkExpr (EAdd pos expr1 (Minus _) expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
-    matchTypes t1 t2
-    matchTypes t1 pInt
+    matchTypes t1 t2 pos
+    matchTypes t1 pInt pos
 
-checkExpr (ERel ni expr1 op expr2) = do
+checkExpr (ERel pos expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
-    matchTypes t1 t2
-    return $ Bool ni
+    matchTypes t1 t2 pos
+    return $ Bool pos
 
-checkExpr (EMul _ expr1 op expr2) = do
+checkExpr (EMul pos expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
-    matchTypes t1 t2
-    matchTypes t1 pInt
+    matchTypes t1 t2 pos
+    matchTypes t1 pInt pos
 
-checkExpr (Not _ expr) = do
+checkExpr (Not pos expr) = do
     typ <- checkExpr expr
-    matchTypes typ pBool
+    matchTypes typ pBool pos
 
-checkExpr (Neg _ expr) = do
+checkExpr (Neg pos expr) = do
     typ <- checkExpr expr
-    matchTypes typ pInt
+    matchTypes typ pInt pos
 
-checkExpr (EAnd _ expr1 expr2) = do
+checkExpr (EAnd pos expr1 expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
-    matchTypes t1 t2  -- TODO what can be &&-ed?
+    matchTypes t1 t2 pos -- TODO what can be &&-ed?
 
-checkExpr (EOr ni expr1 expr2) = checkExpr (EAnd ni expr1 expr2) -- XXX
+checkExpr (EOr pos expr1 expr2) = checkExpr (EAnd pos expr1 expr2) -- XXX
 
-checkExpr (EApp _ fident args) = do
-    ftype@(Fun ni ret _) <- typeof fident
+checkExpr (EApp pos fident args) = do
+    ftype@(Fun _ ret _) <- typeof fident pos
     argTypes <- mapM checkExpr args
-    matchTypes ftype (Fun ni ret argTypes)
+    matchTypes ftype (Fun pos ret argTypes) pos
     return ret
