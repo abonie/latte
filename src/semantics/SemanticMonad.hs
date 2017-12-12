@@ -11,7 +11,7 @@ import AbsLatte
 import TypeError
 
 
-type SymTable = Map.Map Ident PType
+type SymTable = Map.Map Ident (PType, Int)
 
 data Env = Env {
     blockDepth :: Int,
@@ -19,7 +19,7 @@ data Env = Env {
     symTable :: SymTable
 }
 
-insert :: Ident -> PType -> Env -> Env
+insert :: Ident -> (PType, Int) -> Env -> Env
 insert k v (Env d r tab) = Env d r (Map.insert k v tab)
 
 emptyEnv :: Env
@@ -32,6 +32,8 @@ class Monad m => MonadSemanticCheck m where
     declare :: PType -> Ident -> PosInfo -> m ()
     matchTypes :: PType -> PType -> PosInfo -> m PType
     returnType :: m PType
+    enterBlock :: m ()
+    leaveBlock :: m ()
     enterFunction :: PType -> m ()
     leaveFunction :: m ()
     runTypeCheck :: m a -> Either TypeError SymTable
@@ -53,13 +55,23 @@ instance MonadSemanticCheck TCheck where
         maybeType <- gets $ (Map.lookup var) . symTable
         case maybeType of
             Nothing -> throwError $ undeclaredVariable var pos
-            Just t -> return t
+            Just (t, _) -> return t
 
     declare typ var pos = do
         when (rmpos typ == pVoid) (throwError $ otherError (Just "illegal variable type: void") pos)
         tab <- gets symTable
-        when (Map.member var tab) (throwError $ multipleDeclarations var pos)
-        modify $ insert var typ
+        depth <- gets blockDepth
+        when (Map.member var tab && snd (tab Map.! var) == depth)
+             (throwError $ multipleDeclarations var pos)
+        modify $ insert var (typ, depth)
+
+    enterBlock = do
+        (Env d r t) <- get
+        put $ (Env (d+1) r t)
+
+    leaveBlock = do
+        (Env d r t) <- get
+        put $ (Env (d-1) r t)
 
     returnType = gets $ fromJust . retType
 

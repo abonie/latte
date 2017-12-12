@@ -48,9 +48,9 @@ checkFDef (FnDef pos retType fname args body) = do
 
 checkBlock :: PBlock -> TCheck ()
 checkBlock (Block _ stmts) = do
-    -- TODO push block
+    enterBlock
     mapM_ checkStmt stmts
-    -- TODO pop block
+    leaveBlock
 
 
 checkStmt :: PStmt -> TCheck ()
