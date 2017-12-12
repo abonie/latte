@@ -2,6 +2,7 @@ import Test.HUnit
 import System.Directory
 import System.FilePath
 import Control.Monad (when)
+import Data.Either
 import AbsLatte
 import ParLatte (pProgram)
 import LexLatte (tokens)
@@ -10,8 +11,8 @@ import TypeError
 import TypeCheck (typeCheck)
 
 
-tests :: [(String, String, PosInfo -> TypeError)]
-tests = [
+badTests :: [(String, String, PosInfo -> TypeError)]
+badTests = [
     ("test1.lat", "test1.lat", typeMismatch pInt pBool),
     ("test2.lat", "test2.lat", typeMismatch pStr pInt),
     ("test3.lat", "test3.lat", typeMismatch pStr pInt),
@@ -36,11 +37,18 @@ tests = [
     ("bad027.lat", "bad027.lat", typeMismatch pStr pInt)]
 
 
+goodTests :: [String]
+goodTests = ["goodblock.lat"]
+
 main = do
-    args <- mapM parseTests tests
+    args <- mapM parseTests badTests
     when (any (\(x,_,_) -> isBad x) args)
          (error $ show $ head $ filter isBad $ map (\(x, _, _) -> x) args)
-    runTestTT $ TestList $ map (\(Ok p, l, e) -> testTypeMismatch p l e) args
+    runTestTT $ TestList $ map (\(Ok p, l, e) -> testTypeError p l e) args
+    args'' <- mapM readFile goodTests
+    let args' = map (pProgram . tokens) args''
+    when (any isBad args') (error $ show $ head $ filter isBad args')
+    runTestTT $ TestList $ map (\(Ok p, l) -> makeTypeTest p l) $ zip args' goodTests
   where
     parseTests :: (FilePath, String, PosInfo -> TypeError) -> IO (Err PProgram, String, TypeError)
     parseTests (filename, label, err) = do
@@ -53,8 +61,14 @@ isBad (Ok _) = False
 isBad (Bad _) = True
 
 
-testTypeMismatch :: PProgram -> String -> TypeError -> Test
-testTypeMismatch prog label terr = TestLabel label $ TestCase (
+makeTypeTest :: PProgram -> String -> Test
+makeTypeTest prog label = TestLabel label $ TestCase $
+    case typeCheck prog of
+        Left err -> assertFailure $ "Unexpected type error: \"" ++ (show err) ++ "\""
+        Right _ -> assertBool "" True  -- TODO
+
+testTypeError :: PProgram -> String -> TypeError -> Test
+testTypeError prog label terr = TestLabel label $ TestCase (
     case typeCheck prog of
         Right _ -> assertFailure $ "Expected " ++ (show terr) ++ " error, got none"
         Left err -> assertBool ("Expected " ++ (show terr) ++ ", got " ++ (show err)) (matchError err terr))

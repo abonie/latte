@@ -1,4 +1,5 @@
 {-# Language DeriveFunctor #-}
+{-# Language FlexibleInstances #-}
 
 module TypeError where
 import Data.List (intersperse)
@@ -10,10 +11,18 @@ data TypeError_ a = TypeMismatch a PType PType
                | MultipleDeclarations a
                | NoReturn a
                | OtherError a
-    deriving (Show, Eq, Functor)
+    deriving (Eq, Functor)
 
 
 type TypeError = TypeError_ String
+
+
+instance Show TypeError where
+    show (TypeMismatch s _ _) = s
+    show (UndeclaredVariable s) = s
+    show (MultipleDeclarations s) = s
+    show (NoReturn s) = s
+    show (OtherError s) = s
 
 
 (<+>) :: String -> String -> String

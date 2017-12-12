@@ -37,13 +37,11 @@ checkFDef :: PTopDef -> TCheck ()
 checkFDef (FnDef pos retType fname args body) = do
     -- TODO push block
     mapM_ (\(Arg pos t i) -> declare t i pos) args
-    --declare retType (Ident "$ret") pos -- TODO XXX
     enterFunction retType
     checkBlock body
     -- XXX
     unless (rmpos retType == pVoid || (returns $ BStmt nopos body))
            (raise $ noReturn fname pos)
-    --modify $ Map.delete $ Ident "$ret"
     leaveFunction
     -- TODO pop block
 
@@ -96,11 +94,9 @@ checkStmt (CondElse pos expr ifStmt elseStmt) = do
     checkStmt $ Cond pos expr ifStmt  -- XXX
     checkStmt elseStmt
 
-checkStmt (While pos expr stmt) = do
-    checkStmt $ Cond pos expr stmt  -- XX
+checkStmt (While pos expr stmt) = checkStmt $ Cond pos expr stmt  -- XXX
 
-checkStmt (SExp _ expr) = do
-    void $ checkExpr expr
+checkStmt (SExp _ expr) = void $ checkExpr expr
 
 
 checkExpr :: PExpr -> TCheck PType
