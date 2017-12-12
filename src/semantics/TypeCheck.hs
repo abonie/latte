@@ -1,54 +1,12 @@
-{-# LANGUAGE FlexibleInstances #-}
-
 module TypeCheck where
 
-import Control.Monad (when, void)
-import Control.Monad.Except
-import Control.Monad.State
-import qualified Data.Map as Map
+import Control.Monad (void, unless)
+import SemanticMonad
+import TypeError
 import AbsLatte
 
 -- TODO XXX check for void and function types
 --
-
-
-data TypeError = TypeMismatch PType PType PosInfo
-               | UndeclaredVariable String PosInfo
-               | MultipleDeclarations PosInfo
-               | NoReturn PosInfo
-    deriving (Show, Eq)
-
-
-class Monad m => MonadTypeCheck m where
-    matchTypes :: PType -> PType -> PosInfo -> m PType
-    typeof :: Ident -> PosInfo -> m PType
-    declare :: PType -> Ident -> PosInfo -> m ()
-    runTypeCheck :: m a -> Either TypeError a
-
-type TCheck = ExceptT TypeError (State Env)
-
-instance MonadTypeCheck TCheck where
-    matchTypes t1 t2 pos = do
-        let t1' = rmpos t1
-        let t2' = rmpos t2
-        when (t1' /= t2') (throwError $ TypeMismatch t1 t2 pos)
-        return t1
-
-    typeof var@(Ident name) pos = do
-        maybeType <- gets $ Map.lookup var
-        case maybeType of
-            Nothing -> throwError $ UndeclaredVariable name pos
-            Just t -> return t
-
-    declare typ var pos = do
-        env <- get
-        when (Map.member var env) (throwError $ MultipleDeclarations pos)
-        modify $ Map.insert var typ
-
-    runTypeCheck tc = evalState (runExceptT tc) Map.empty
-
-
-type Env = Map.Map Ident PType
 
 
 returns :: PStmt -> Bool
@@ -59,15 +17,19 @@ returns (BStmt _ (Block _ stmts)) = any returns stmts
 returns _ = False
 
 
-typeCheck :: PProgram -> TCheck ()
-typeCheck (Program _ fdefs) = do
+typeCheck :: PProgram -> Either TypeError SymTable
+typeCheck prog = runTypeCheck $ checkProg prog
+
+
+checkProg :: PProgram -> TCheck ()
+checkProg (Program _ fdefs) = do
     mapM_ addFType fdefs
     mapM_ checkFDef fdefs
 
 
 addFType :: PTopDef -> TCheck ()
 addFType (FnDef pos retType fname args _) = do
-    let argTypes = Prelude.map (\(Arg _ t _) -> t) args
+    let argTypes = map (\(Arg _ t _) -> t) args
     declare (Fun pos retType argTypes) fname pos
 
 
@@ -75,12 +37,14 @@ checkFDef :: PTopDef -> TCheck ()
 checkFDef (FnDef pos retType fname args body) = do
     -- TODO push block
     mapM_ (\(Arg pos t i) -> declare t i pos) args
-    declare retType (Ident "$ret") pos -- TODO XXX
+    --declare retType (Ident "$ret") pos -- TODO XXX
+    enterFunction retType
     checkBlock body
     -- XXX
     unless (rmpos retType == pVoid || (returns $ BStmt nopos body))
-           (throwError $ NoReturn pos)
-    modify $ Map.delete $ Ident "$ret"
+           (raise $ noReturn fname pos)
+    --modify $ Map.delete $ Ident "$ret"
+    leaveFunction
     -- TODO pop block
 
 
@@ -116,11 +80,11 @@ checkStmt (Decr pos ident) = checkStmt (Incr pos ident) -- XXX?
 
 checkStmt (Ret pos expr) = do
     exprType <- checkExpr expr
-    retType <- typeof (Ident "$ret") pos  -- XXX
+    retType <- returnType
     void $ matchTypes retType exprType pos
 
 checkStmt (VRet pos) = do
-    retType <- typeof (Ident "$ret") pos  -- XXX
+    retType <- returnType
     void $ matchTypes retType pVoid pos
 
 checkStmt (Cond pos expr stmt) = do
@@ -155,7 +119,7 @@ checkExpr (EAdd pos expr1 (Plus _) expr2) = do
     t2 <- checkExpr expr2
     matchTypes t1 t2 pos
     let t1' = rmpos t1
-    unless (elem t1' [pInt, pStr]) (throwError $ TypeMismatch t1 pInt pos) -- XXX
+    unless (elem t1' [pInt, pStr]) (raise $ typeMismatch t1 pInt pos) -- XXX
     return t1
 
 checkExpr (EAdd pos expr1 (Minus _) expr2) = do
@@ -194,5 +158,5 @@ checkExpr (EOr pos expr1 expr2) = checkExpr (EAnd pos expr1 expr2) -- XXX
 checkExpr (EApp pos fident args) = do
     ftype@(Fun _ ret _) <- typeof fident pos
     argTypes <- mapM checkExpr args
-    matchTypes ftype (Fun pos ret argTypes) pos
+    matchTypes ftype (Fun nopos ret argTypes) pos
     return ret

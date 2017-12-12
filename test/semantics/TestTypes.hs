@@ -6,32 +6,34 @@ import AbsLatte
 import ParLatte (pProgram)
 import LexLatte (tokens)
 import ErrM (Err(..))
-import TypeCheck (runTypeCheck, typeCheck, TypeError(..))
+import TypeError
+import TypeCheck (typeCheck)
 
 
+tests :: [(String, String, PosInfo -> TypeError)]
 tests = [
-    ("test1.lat", "test1.lat", TypeMismatch pInt pBool),
-    ("test2.lat", "test2.lat", TypeMismatch pStr pInt),
-    ("test3.lat", "test3.lat", TypeMismatch pStr pInt),
-    ("test4.lat", "test4.lat", TypeMismatch pInt pBool),
-    ("test5.lat", "test5.lat", TypeMismatch pInt pVoid),
-    ("test6.lat", "test6.lat", NoReturn),
-    ("bad003.lat", "bad003.lat", MultipleDeclarations),
-    ("bad007.lat", "bad007.lat", MultipleDeclarations),
-    ("bad008.lat", "bad008.lat", NoReturn),
-    ("bad010.lat", "bad010.lat", TypeMismatch pInt pVoid),
-    ("bad012.lat", "bad012.lat", NoReturn),
-    ("bad017.lat", "bad017.lat", TypeMismatch (pFun pInt [pInt]) (pFun pInt [])),
-    ("bad018.lat", "bad018.lat", TypeMismatch (pFun pInt [pInt, pInt]) (pFun pInt [pInt])),
-    ("bad019.lat", "bad019.lat", TypeMismatch (pFun pInt [pInt]) (pFun pInt [pInt, pInt])),
-    ("bad020.lat", "bad020.lat", TypeMismatch pStr pBool),
-    ("bad021.lat", "bad021.lat", NoReturn),
-    ("bad022.lat", "bad022.lat", TypeMismatch pStr pInt),
-    ("bad023.lat", "bad023.lat", TypeMismatch pInt pStr),
-    ("bad024.lat", "bad024.lat", NoReturn),
-    ("bad025.lat", "bad025.lat", NoReturn),
-    ("bad026.lat", "bad026.lat", TypeMismatch pInt pStr),
-    ("bad027.lat", "bad027.lat", TypeMismatch pStr pInt)]
+    ("test1.lat", "test1.lat", typeMismatch pInt pBool),
+    ("test2.lat", "test2.lat", typeMismatch pStr pInt),
+    ("test3.lat", "test3.lat", typeMismatch pStr pInt),
+    ("test4.lat", "test4.lat", typeMismatch pInt pBool),
+    ("test5.lat", "test5.lat", typeMismatch pInt pVoid),
+    ("test6.lat", "test6.lat", noReturn (Ident "")),
+    ("bad003.lat", "bad003.lat", multipleDeclarations (Ident "")),
+    ("bad007.lat", "bad007.lat", multipleDeclarations (Ident "")),
+    ("bad008.lat", "bad008.lat", noReturn (Ident "")),
+    ("bad010.lat", "bad010.lat", typeMismatch pInt pVoid),
+    ("bad012.lat", "bad012.lat", noReturn (Ident "")),
+    ("bad017.lat", "bad017.lat", typeMismatch (pFun pInt [pInt]) (pFun pInt [])),
+    ("bad018.lat", "bad018.lat", typeMismatch (pFun pInt [pInt, pInt]) (pFun pInt [pInt])),
+    ("bad019.lat", "bad019.lat", typeMismatch (pFun pInt [pInt]) (pFun pInt [pInt, pInt])),
+    ("bad020.lat", "bad020.lat", typeMismatch pStr pBool),
+    ("bad021.lat", "bad021.lat", noReturn (Ident "")),
+    ("bad022.lat", "bad022.lat", typeMismatch pStr pInt),
+    ("bad023.lat", "bad023.lat", typeMismatch pInt pStr),
+    ("bad024.lat", "bad024.lat", noReturn (Ident "")),
+    ("bad025.lat", "bad025.lat", noReturn (Ident "")),
+    ("bad026.lat", "bad026.lat", typeMismatch pInt pStr),
+    ("bad027.lat", "bad027.lat", typeMismatch pStr pInt)]
 
 
 main = do
@@ -53,22 +55,17 @@ isBad (Bad _) = True
 
 testTypeMismatch :: PProgram -> String -> TypeError -> Test
 testTypeMismatch prog label terr = TestLabel label $ TestCase (
-    case runTypeCheck $ typeCheck prog of
+    case typeCheck prog of
         Right _ -> assertFailure $ "Expected " ++ (show terr) ++ " error, got none"
         Left err -> assertBool ("Expected " ++ (show terr) ++ ", got " ++ (show err)) (matchError err terr))
 
 
 matchError :: TypeError -> TypeError -> Bool
-matchError (TypeMismatch t1 t2 _) (TypeMismatch u1 u2 _) = let
+matchError (TypeMismatch _ t1 t2) (TypeMismatch _ u1 u2) = let
     t1' = rmpos t1
     t2' = rmpos t2
     u1' = rmpos u1
     u2' = rmpos u2
-    in (TypeMismatch t1' t2' nopos) == (TypeMismatch u1' u2' nopos)
+    in (TypeMismatch "" t1' t2') == (TypeMismatch "" u1' u2')
 
-matchError a b = (rmposerr a) == (rmposerr b)
-
-rmposerr :: TypeError -> TypeError
-rmposerr (NoReturn _) = NoReturn nopos
-rmposerr (MultipleDeclarations _) = MultipleDeclarations nopos
-rmposerr (UndeclaredVariable s _) = UndeclaredVariable s nopos
+matchError a b = ("" <$ a) == ("" <$ b)
