@@ -1,16 +1,36 @@
+-- bnfc --functor -m --haskell -o src/parsing/ Latte.cf
+
 -- programs ------------------------------------------------
 
 entrypoints Program ;
 
 Program.   Program ::= [TopDef] ;
 
-FnDef.	   TopDef ::= Type Ident "(" [Arg] ")" Block ;
+FnDef.	   TopDef ::= FunDef ;
+
+ClsDef.	   TopDef ::= "class" Ident Ext CBody ;
 
 separator nonempty TopDef "" ;
+
+ExtSome.   Ext ::= "extends" Ident ;
+
+ExtNone.   Ext ::= "" ;
+
+FunDef.    FunDef ::= Type Ident "(" [Arg] ")" Block ;
 
 Arg. 	   Arg ::= Type Ident;
 
 separator  Arg "," ;
+
+CBody.     CBody ::= "{" [MemDecl] "}" ;
+
+MemVar.    MemDecl ::= Type [Ident] ";" ;
+
+MemFun.    MemDecl ::= FunDef ;
+
+separator  MemDecl "" ;
+
+separator nonempty Ident "," ;
 
 -- statements ----------------------------------------------
 
@@ -58,6 +78,8 @@ Bool.      Type ::= "boolean" ;
 
 Void.      Type ::= "void" ;
 
+ClsT.      Type ::= Ident ;
+
 internal   Fun. Type ::= Type "(" [Type] ")" ;
 
 separator  Type "," ;
@@ -71,6 +93,8 @@ ELitInt.   Expr6 ::= Integer ;
 ELitTrue.  Expr6 ::= "true" ;
 
 ELitFalse. Expr6 ::= "false" ;
+
+ENew.      Expr6 ::= "new" Ident ;
 
 EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
 
