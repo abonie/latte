@@ -25,13 +25,13 @@ checkProg (Program _ fdefs) = do
 
 
 addFType :: PTopDef -> TCheck ()
-addFType (FnDef pos retType fname args _) = do
+addFType (FnDef pos (FunDef _ retType fname args _)) = do
     let argTypes = map (\(Arg _ t _) -> t) args
     declare (Fun pos retType argTypes) fname pos
 
 
 checkFDef :: PTopDef -> TCheck ()
-checkFDef (FnDef pos retType fname args body@(Block _ stmts)) = do
+checkFDef (FnDef pos (FunDef _ retType fname args body@(Block _ stmts))) = do
     enterFunction retType
     mapM_ (\(Arg pos t i) -> declare t i pos) args  -- XXX
     mapM_ checkStmt stmts  -- XXX
