@@ -10,20 +10,30 @@ import Data.Maybe (fromJust)
 import AbsLatte
 import TypeError
 
+-- TODO XXX: handling blocks by copying Env may be
+--           inefficient in terms of memory usage
+--
+-- TODO: with this approach of copying Env for new
+--       blocks, maintaining blockDepth variable
+--       may be unnecessary
+--
 
 type SymTable = Map.Map Ident (PType, Int)
 
 data Env = Env {
     blockDepth :: Int,
     retType :: Maybe PType,
-    symTable :: SymTable
+    symTables :: [SymTable]
 }
 
+symTable :: Env -> SymTable
+symTable = head . symTables
+
 insert :: Ident -> (PType, Int) -> Env -> Env
-insert k v (Env d r tab) = Env d r (Map.insert k v tab)
+insert k v (Env d r (tab:rest)) = Env d r $ (Map.insert k v tab):rest
 
 emptyEnv :: Env
-emptyEnv = Env 0 Nothing Map.empty
+emptyEnv = Env 0 Nothing [Map.empty]
 
 
 class Monad m => MonadSemanticCheck m where
@@ -67,19 +77,22 @@ instance MonadSemanticCheck TCheck where
 
     enterBlock = do
         (Env d r t) <- get
-        put $ (Env (d+1) r t)
+        put $ (Env (d+1) r ((head t):t))
 
     leaveBlock = do
         (Env d r t) <- get
-        put $ (Env (d-1) r t)
+        when (d == 0) (throwError $ otherError Nothing nopos) -- XXX
+        put $ (Env (d-1) r (tail t))
 
     returnType = gets $ fromJust . retType
 
     enterFunction typ = do
+        enterBlock
         (Env d _ t) <- get
         put $ Env d (Just typ) t
 
     leaveFunction = do
+        leaveBlock
         (Env d _ t) <- get
         put $ Env d Nothing t
 

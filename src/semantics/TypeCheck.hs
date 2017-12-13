@@ -5,9 +5,6 @@ import SemanticMonad
 import TypeError
 import AbsLatte
 
--- TODO XXX check for void and function types
---
-
 
 returns :: PStmt -> Bool
 returns (Ret _ _) = True
@@ -34,16 +31,14 @@ addFType (FnDef pos retType fname args _) = do
 
 
 checkFDef :: PTopDef -> TCheck ()
-checkFDef (FnDef pos retType fname args body) = do
-    -- TODO push block
-    mapM_ (\(Arg pos t i) -> declare t i pos) args
+checkFDef (FnDef pos retType fname args body@(Block _ stmts)) = do
     enterFunction retType
-    checkBlock body
+    mapM_ (\(Arg pos t i) -> declare t i pos) args  -- XXX
+    mapM_ checkStmt stmts  -- XXX
     -- XXX
     unless (rmpos retType == pVoid || (returns $ BStmt nopos body))
            (raise $ noReturn fname pos)
     leaveFunction
-    -- TODO pop block
 
 
 checkBlock :: PBlock -> TCheck ()

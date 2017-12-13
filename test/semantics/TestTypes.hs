@@ -19,6 +19,7 @@ badTests = [
     ("test4.lat", "test4.lat", typeMismatch pInt pBool),
     ("test5.lat", "test5.lat", typeMismatch pInt pVoid),
     ("test6.lat", "test6.lat", noReturn (Ident "")),
+    ("badfun.lat", "badfun.lat", multipleDeclarations (Ident "")),
     ("bad003.lat", "bad003.lat", multipleDeclarations (Ident "")),
     ("bad007.lat", "bad007.lat", multipleDeclarations (Ident "")),
     ("bad008.lat", "bad008.lat", noReturn (Ident "")),
@@ -38,7 +39,13 @@ badTests = [
 
 
 goodTests :: [String]
-goodTests = ["goodblock.lat"]
+goodTests = [
+    "goodblock5.lat",
+    "goodblock4.lat",
+    "goodblock3.lat",
+    "goodblock2.lat",
+    "goodblock.lat",
+    "goodfun.lat"]
 
 main = do
     args <- mapM parseTests badTests
