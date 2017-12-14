@@ -60,12 +60,12 @@ checkStmt (Decl _ typ items) = mapM_ foo items where
         matchTypes exprType typ pos
         declare typ ident pos
 
-checkStmt (Ass pos ident expr) = do
+checkStmt (Ass pos (LhsVar _ ident) expr) = do
     exprType <- checkExpr expr
     varType <- typeof ident pos
     void $ matchTypes varType exprType pos
 
-checkStmt (Incr pos ident) = do
+checkStmt (Incr pos (LhsVar _ ident)) = do
     varType <- typeof ident pos
     void $ matchTypes varType pInt pos
 
@@ -97,13 +97,13 @@ checkStmt (SExp _ expr) = void $ checkExpr expr
 checkExpr :: PExpr -> TCheck PType
 checkExpr (EVar pos ident) = typeof ident pos
 
-checkExpr (ELitTrue pos) = return $ Bool pos
+checkExpr (ELitTrue pos) = return $ Scalar pos $ Bool pos
 
-checkExpr (ELitFalse pos) = return $ Bool pos
+checkExpr (ELitFalse pos) = return $ Scalar pos $ Bool pos
 
-checkExpr (ELitInt pos _) = return $ Int pos
+checkExpr (ELitInt pos _) = return $ Scalar pos $ Int pos
 
-checkExpr (EString pos _) = return $ Str pos
+checkExpr (EString pos _) = return $ Scalar pos $ Str pos
 
 checkExpr (EAdd pos expr1 (Plus _) expr2) = do
     t1 <- checkExpr expr1
@@ -123,7 +123,7 @@ checkExpr (ERel pos expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2 pos
-    return $ Bool pos
+    return $ Scalar pos $ Bool pos
 
 checkExpr (EMul pos expr1 op expr2) = do
     t1 <- checkExpr expr1

@@ -64,9 +64,9 @@ data Stmt a
     = Empty a
     | BStmt a (Block a)
     | Decl a (Type a) [Item a]
-    | Ass a Ident (Expr a)
-    | Incr a Ident
-    | Decr a Ident
+    | Ass a (LHS a) (Expr a)
+    | Incr a (LHS a)
+    | Decr a (LHS a)
     | Ret a (Expr a)
     | VRet a
     | Cond a (Expr a) (Stmt a)
@@ -80,9 +80,9 @@ instance Functor Stmt where
         Empty a -> Empty (f a)
         BStmt a block -> BStmt (f a) (fmap f block)
         Decl a type_ items -> Decl (f a) (fmap f type_) (map (fmap f) items)
-        Ass a ident expr -> Ass (f a) ident (fmap f expr)
-        Incr a ident -> Incr (f a) ident
-        Decr a ident -> Decr (f a) ident
+        Ass a lhs expr -> Ass (f a) (fmap f lhs) (fmap f expr)
+        Incr a lhs -> Incr (f a) (fmap f lhs)
+        Decr a lhs -> Decr (f a) (fmap f lhs)
         Ret a expr -> Ret (f a) (fmap f expr)
         VRet a -> VRet (f a)
         Cond a expr stmt -> Cond (f a) (fmap f expr) (fmap f stmt)
@@ -96,30 +96,51 @@ instance Functor Item where
     fmap f x = case x of
         NoInit a ident -> NoInit (f a) ident
         Init a ident expr -> Init (f a) ident (fmap f expr)
+data LHS a
+    = LhsVar a Ident | LhsMem a Ident Ident | LhsInd a Ident (Expr a)
+  deriving (Eq, Ord, Show, Read)
+
+instance Functor LHS where
+    fmap f x = case x of
+        LhsVar a ident -> LhsVar (f a) ident
+        LhsMem a ident1 ident2 -> LhsMem (f a) ident1 ident2
+        LhsInd a ident expr -> LhsInd (f a) ident (fmap f expr)
 data Type a
-    = Int a
-    | Str a
-    | Bool a
-    | Void a
-    | ClsT a Ident
-    | Fun a (Type a) [Type a]
+    = Scalar a (SType a) | Array a (AType a) | Fun a (Type a) [Type a]
   deriving (Eq, Ord, Show, Read)
 
 instance Functor Type where
+    fmap f x = case x of
+        Scalar a stype -> Scalar (f a) (fmap f stype)
+        Array a atype -> Array (f a) (fmap f atype)
+        Fun a type_ types -> Fun (f a) (fmap f type_) (map (fmap f) types)
+data AType a = Arr a (SType a)
+  deriving (Eq, Ord, Show, Read)
+
+instance Functor AType where
+    fmap f x = case x of
+        Arr a stype -> Arr (f a) (fmap f stype)
+data SType a = Int a | Str a | Bool a | Void a | TCls a Ident
+  deriving (Eq, Ord, Show, Read)
+
+instance Functor SType where
     fmap f x = case x of
         Int a -> Int (f a)
         Str a -> Str (f a)
         Bool a -> Bool (f a)
         Void a -> Void (f a)
-        ClsT a ident -> ClsT (f a) ident
-        Fun a type_ types -> Fun (f a) (fmap f type_) (map (fmap f) types)
+        TCls a ident -> TCls (f a) ident
 data Expr a
     = EVar a Ident
+    | EMem a Ident Ident
+    | EInd a Ident (Expr a)
     | ELitInt a Integer
     | ELitTrue a
     | ELitFalse a
     | ENew a Ident
+    | EArr a (Type a) (Expr a)
     | EApp a Ident [Expr a]
+    | EMet a Ident Ident [Expr a]
     | EString a String
     | Neg a (Expr a)
     | Not a (Expr a)
@@ -133,11 +154,15 @@ data Expr a
 instance Functor Expr where
     fmap f x = case x of
         EVar a ident -> EVar (f a) ident
+        EMem a ident1 ident2 -> EMem (f a) ident1 ident2
+        EInd a ident expr -> EInd (f a) ident (fmap f expr)
         ELitInt a integer -> ELitInt (f a) integer
         ELitTrue a -> ELitTrue (f a)
         ELitFalse a -> ELitFalse (f a)
         ENew a ident -> ENew (f a) ident
+        EArr a type_ expr -> EArr (f a) (fmap f type_) (fmap f expr)
         EApp a ident exprs -> EApp (f a) ident (map (fmap f) exprs)
+        EMet a ident1 ident2 exprs -> EMet (f a) ident1 ident2 (map (fmap f) exprs)
         EString a string -> EString (f a) string
         Neg a expr -> Neg (f a) (fmap f expr)
         Not a expr -> Not (f a) (fmap f expr)
@@ -195,8 +220,8 @@ type PAddOp = AddOp PosInfo
 type PMulOp = MulOp PosInfo
 type PRelOp = RelOp PosInfo
 
-pInt = Int nopos
-pStr = Str nopos
-pBool = Bool nopos
-pFun = Fun nopos
-pVoid = Void nopos
+pInt  = Scalar nopos $ Int nopos
+pStr  = Scalar nopos $ Str nopos
+pBool = Scalar nopos $ Bool nopos
+pVoid = Scalar nopos $ Void nopos
+pFun  = Fun nopos

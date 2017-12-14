@@ -36,10 +36,10 @@ pPos Nothing = ""
 
 
 pType :: Type a -> String
-pType (Int _) = "int"
-pType (Str _) = "str"
-pType (Bool _) = "bool"
-pType (Void _) = "void"
+pType (Scalar _ (Int _)) = "int"
+pType (Scalar _ (Str _)) = "str"
+pType (Scalar _ (Bool _)) = "bool"
+pType (Scalar _ (Void _)) = "void"
 pType (Fun _ r a) = (pType r) ++ "(" ++ (concat (intersperse "," (map pType a))) ++ ")"
 
 

@@ -50,11 +50,11 @@ Init.      Item ::= Ident "=" Expr ;
 
 separator nonempty Item "," ;
 
-Ass.       Stmt ::= Ident "=" Expr  ";" ;
+Ass.       Stmt ::= LHS "=" Expr  ";" ;
 
-Incr.      Stmt ::= Ident "++"  ";" ;
+Incr.      Stmt ::= LHS "++"  ";" ;
 
-Decr.      Stmt ::= Ident "--"  ";" ;
+Decr.      Stmt ::= LHS "--"  ";" ;
 
 Ret.       Stmt ::= "return" Expr ";" ;
 
@@ -68,17 +68,29 @@ While.     Stmt ::= "while" "(" Expr ")" Stmt ;
 
 SExp.      Stmt ::= Expr  ";" ;
 
+LhsVar.    LHS ::= Ident ;
+
+LhsMem.    LHS ::= Ident "." Ident ;
+
+LhsInd.    LHS ::= Ident "[" Expr "]" ;
+
 -- Types ---------------------------------------------------
 
-Int.       Type ::= "int" ;
+Scalar.    Type ::= SType ;
 
-Str.       Type ::= "string" ;
+Array.     Type ::= AType ;
 
-Bool.      Type ::= "boolean" ;
+Arr.       AType ::= SType "[]" ;
 
-Void.      Type ::= "void" ;
+Int.       SType ::= "int" ;
 
-ClsT.      Type ::= Ident ;
+Str.       SType ::= "string" ;
+
+Bool.      SType ::= "boolean" ;
+
+Void.      SType ::= "void" ;
+
+TCls.      SType ::= Ident ;
 
 internal   Fun. Type ::= Type "(" [Type] ")" ;
 
@@ -88,6 +100,10 @@ separator  Type "," ;
 
 EVar.      Expr6 ::= Ident ;
 
+EMem.      Expr6 ::= Ident "." Ident ;
+
+EInd.      Expr6 ::= Ident "[" Expr "]" ;
+
 ELitInt.   Expr6 ::= Integer ;
 
 ELitTrue.  Expr6 ::= "true" ;
@@ -96,7 +112,11 @@ ELitFalse. Expr6 ::= "false" ;
 
 ENew.      Expr6 ::= "new" Ident ;
 
+EArr.      Expr6 ::= "new" Type "[" Expr "]" ;
+
 EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
+
+EMet.      Expr6 ::= Ident "." Ident "(" [Expr] ")" ;
 
 EString.   Expr6 ::= String ;
 

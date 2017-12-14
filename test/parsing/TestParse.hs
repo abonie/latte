@@ -9,12 +9,18 @@ import LexLatte (tokens)
 import ErrM (Err(..))
 
 
-data Result = Yes | No
-
-testFiles :: [(String, Result)]
+testFiles :: [(String, Bool)]
 testFiles = [
-    ("bad001.lat", No),
-    ("bad002.lat", No)]
+    ("bad001.lat", False),
+    ("bad004.lat", False),
+    ("bad005.lat", False),
+    ("bad002.lat", False),
+    ("counter.lat", True),
+    ("linked.lat", True),
+    ("points.lat", True),
+    ("queue.lat", True),
+    ("array002.lat", True),
+    ("array001.lat", True)]
 
 
 main = do
@@ -22,19 +28,19 @@ main = do
     runTestTT $ TestList $ map makeTest args
 
 
-readTest :: (String, Result) -> IO (Err PProgram, String, Result)
+readTest :: (String, Bool) -> IO (Err PProgram, String, Bool)
 readTest (filename, res) = do
     f <- readFile filename
     return (pProgram $ tokens f, filename, res)
 
 
-makeTest :: (Err PProgram, String, Result) -> Test
-makeTest (Ok _, _, Yes) = TestCase $ assertBool "" True  -- TODO
+makeTest :: (Err PProgram, String, Bool) -> Test
+makeTest (Ok _, _, True) = TestCase $ assertBool "" True  -- TODO
 
-makeTest (Bad _, _, No) = TestCase $ assertBool "" True  -- TODO
+makeTest (Bad _, _, False) = TestCase $ assertBool "" True  -- TODO
 
-makeTest (Ok _, label, No) = TestLabel label $ TestCase $
+makeTest (Ok _, label, False) = TestLabel label $ TestCase $
     assertFailure "Unexpected parse success"
 
-makeTest (Bad err, label, Yes) = TestLabel label $ TestCase $
+makeTest (Bad err, label, True) = TestLabel label $ TestCase $
     assertFailure $ "Error while parsing: " ++ (show err)
