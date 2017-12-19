@@ -138,6 +138,7 @@ data Expr a
     | ELitTrue a
     | ELitFalse a
     | ENew a Ident
+    | ENull a Ident
     | EArr a (Type a) (Expr a)
     | EApp a Ident [Expr a]
     | EMet a Ident Ident [Expr a]
@@ -160,6 +161,7 @@ instance Functor Expr where
         ELitTrue a -> ELitTrue (f a)
         ELitFalse a -> ELitFalse (f a)
         ENew a ident -> ENew (f a) ident
+        ENull a ident -> ENull (f a) ident
         EArr a type_ expr -> EArr (f a) (fmap f type_) (fmap f expr)
         EApp a ident exprs -> EApp (f a) ident (map (fmap f) exprs)
         EMet a ident1 ident2 exprs -> EMet (f a) ident1 ident2 (map (fmap f) exprs)
@@ -224,4 +226,4 @@ pInt  = Scalar nopos $ Int nopos
 pStr  = Scalar nopos $ Str nopos
 pBool = Scalar nopos $ Bool nopos
 pVoid = Scalar nopos $ Void nopos
-pFun  = Fun nopos
+pFun = Fun nopos

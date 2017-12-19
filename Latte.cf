@@ -112,6 +112,8 @@ ELitFalse. Expr6 ::= "false" ;
 
 ENew.      Expr6 ::= "new" Ident ;
 
+ENull.     Expr6 ::= "(" Ident ")" "null" ;
+
 EArr.      Expr6 ::= "new" Type "[" Expr "]" ;
 
 EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
@@ -119,6 +121,7 @@ EApp.      Expr6 ::= Ident "(" [Expr] ")" ;
 EMet.      Expr6 ::= Ident "." Ident "(" [Expr] ")" ;
 
 EString.   Expr6 ::= String ;
+
 
 Neg.       Expr5 ::= "-" Expr6 ;
 
