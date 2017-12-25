@@ -20,26 +20,30 @@ import TypeError
 
 type SymTable = Map.Map Ident (PType, Int)
 
+type TypeEnv = Map.Map Ident (Maybe Ident)
+
 data Env = Env {
     blockDepth :: Int,
     retType :: Maybe PType,
-    symTables :: [SymTable]
+    symTables :: [SymTable],
+    typeEnv :: TypeEnv
 }
 
 symTable :: Env -> SymTable
 symTable = head . symTables
 
 insert :: Ident -> (PType, Int) -> Env -> Env
-insert k v (Env d r (tab:rest)) = Env d r $ (Map.insert k v tab):rest
+insert k v (Env d r (stab:rest) typ) = Env d r ((Map.insert k v stab):rest) typ
 
 emptyEnv :: Env
-emptyEnv = Env 0 Nothing [Map.empty]
+emptyEnv = Env 0 Nothing [Map.empty] Map.empty
 
 
 class Monad m => MonadSemanticCheck m where
     raise :: TypeError -> m a
     typeof :: Ident -> PosInfo -> m PType
     declare :: PType -> Ident -> PosInfo -> m ()
+    addClass :: Ident -> Maybe Ident -> PosInfo -> m ()
     matchTypes :: PType -> PType -> PosInfo -> m PType
     returnType :: m PType
     enterBlock :: m ()
@@ -75,26 +79,32 @@ instance MonadSemanticCheck TCheck where
              (throwError $ multipleDeclarations var pos)
         modify $ insert var (typ, depth)
 
+    addClass ident super pos = do
+        tenv <- gets typeEnv
+        when (Map.member ident tenv) (throwError $ multipleDeclarations ident pos)
+        -- TODO XXX check if super exists and there is no cycle
+        modify $ \s -> s { typeEnv = Map.insert ident super tenv }
+
     enterBlock = do
-        (Env d r t) <- get
-        put $ (Env (d+1) r ((head t):t))
+        depth <- gets blockDepth
+        (h:t) <- gets symTables
+        modify $ \s -> s { blockDepth = depth+1, symTables = (h:h:t) }
 
     leaveBlock = do
-        (Env d r t) <- get
-        when (d == 0) (throwError $ otherError Nothing nopos) -- XXX
-        put $ (Env (d-1) r (tail t))
+        depth <- gets blockDepth
+        (_:t) <- gets symTables
+        when (depth == 0) (throwError $ otherError Nothing nopos) -- XXX
+        modify $ \s -> s { blockDepth = depth-1, symTables = t }
 
     returnType = gets $ fromJust . retType
 
     enterFunction typ = do
         enterBlock
-        (Env d _ t) <- get
-        put $ Env d (Just typ) t
+        modify $ \s -> s { retType = (Just typ) }
 
     leaveFunction = do
         leaveBlock
-        (Env d _ t) <- get
-        put $ Env d Nothing t
+        modify $ \s -> s { retType = Nothing }
 
     runTypeCheck tc = let (val, state) = runState (runExceptT tc) emptyEnv in
         (symTable state) <$ val

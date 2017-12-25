@@ -20,6 +20,7 @@ badTests = [
     ("test5.lat", "test5.lat", typeMismatch pInt pVoid),
     ("test6.lat", "test6.lat", noReturn (Ident "")),
     ("badfun.lat", "badfun.lat", multipleDeclarations (Ident "")),
+    ("bad2darray.lat", "bad2darray.lat", otherError (Just "Two dimensional arrays not supported")),
     ("bad003.lat", "bad003.lat", multipleDeclarations (Ident "")),
     ("bad007.lat", "bad007.lat", multipleDeclarations (Ident "")),
     ("bad008.lat", "bad008.lat", noReturn (Ident "")),
@@ -45,7 +46,8 @@ goodTests = [
     "goodblock3.lat",
     "goodblock2.lat",
     "goodblock.lat",
-    "goodfun.lat"]
+    "goodfun.lat",
+    "goodcls.lat"]
 
 main = do
     args <- mapM parseTests badTests
