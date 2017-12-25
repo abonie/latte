@@ -76,21 +76,17 @@ LhsInd.    LHS ::= Ident "[" Expr "]" ;
 
 -- Types ---------------------------------------------------
 
-Scalar.    Type ::= SType ;
+Int.       Type ::= "int" ;
 
-Array.     Type ::= AType ;
+Str.       Type ::= "string" ;
 
-Arr.       AType ::= SType "[]" ;
+Bool.      Type ::= "boolean" ;
 
-Int.       SType ::= "int" ;
+Void.      Type ::= "void" ;
 
-Str.       SType ::= "string" ;
+TCls.      Type ::= Ident ;
 
-Bool.      SType ::= "boolean" ;
-
-Void.      SType ::= "void" ;
-
-TCls.      SType ::= Ident ;
+Arr.       Type ::= Type "[]" ;
 
 internal   Fun. Type ::= Type "(" [Type] ")" ;
 

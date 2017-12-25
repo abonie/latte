@@ -106,30 +106,24 @@ instance Functor LHS where
         LhsMem a ident1 ident2 -> LhsMem (f a) ident1 ident2
         LhsInd a ident expr -> LhsInd (f a) ident (fmap f expr)
 data Type a
-    = Scalar a (SType a) | Array a (AType a) | Fun a (Type a) [Type a]
+    = Int a
+    | Str a
+    | Bool a
+    | Void a
+    | TCls a Ident
+    | Arr a (Type a)
+    | Fun a (Type a) [Type a]
   deriving (Eq, Ord, Show, Read)
 
 instance Functor Type where
-    fmap f x = case x of
-        Scalar a stype -> Scalar (f a) (fmap f stype)
-        Array a atype -> Array (f a) (fmap f atype)
-        Fun a type_ types -> Fun (f a) (fmap f type_) (map (fmap f) types)
-data AType a = Arr a (SType a)
-  deriving (Eq, Ord, Show, Read)
-
-instance Functor AType where
-    fmap f x = case x of
-        Arr a stype -> Arr (f a) (fmap f stype)
-data SType a = Int a | Str a | Bool a | Void a | TCls a Ident
-  deriving (Eq, Ord, Show, Read)
-
-instance Functor SType where
     fmap f x = case x of
         Int a -> Int (f a)
         Str a -> Str (f a)
         Bool a -> Bool (f a)
         Void a -> Void (f a)
         TCls a ident -> TCls (f a) ident
+        Arr a type_ -> Arr (f a) (fmap f type_)
+        Fun a type_ types -> Fun (f a) (fmap f type_) (map (fmap f) types)
 data Expr a
     = EVar a Ident
     | EMem a Ident Ident
@@ -222,8 +216,8 @@ type PAddOp = AddOp PosInfo
 type PMulOp = MulOp PosInfo
 type PRelOp = RelOp PosInfo
 
-pInt  = Scalar nopos $ Int nopos
-pStr  = Scalar nopos $ Str nopos
-pBool = Scalar nopos $ Bool nopos
-pVoid = Scalar nopos $ Void nopos
+pInt  = Int nopos
+pStr  = Str nopos
+pBool = Bool nopos
+pVoid = Void nopos
 pFun = Fun nopos
