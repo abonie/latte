@@ -1,9 +1,11 @@
-module TypeCheck where
+{-# LANGUAGE LambdaCase #-}
+
+module Semantics.TypeCheck where
 
 import Control.Monad (void, unless)
-import SemanticMonad
-import TypeError
-import AbsLatte
+import Parsing.AbsLatte
+import Semantics.SemanticMonad
+import Semantics.TypeError
 
 
 returns :: PStmt -> Bool
@@ -19,19 +21,23 @@ typeCheck prog = runTypeCheck $ checkProg prog
 
 
 checkProg :: PProgram -> TCheck ()
-checkProg (Program _ fdefs) = do
-    mapM_ addFType fdefs
-    mapM_ checkFDef fdefs
+checkProg (Program _ defs) = do
+    -- XXX ugly
+    mapM_ addTypeDecl $ filter (\case { FnDef _ _ -> False; _ -> True }) defs
+    mapM_ addTypeDecl $ filter (\case { FnDef _ _ -> True; _ -> False }) defs
+    mapM_ checkTopDef defs
 
 
-addFType :: PTopDef -> TCheck ()
-addFType (FnDef pos (FunDef _ retType fname args _)) = do
+addTypeDecl :: PTopDef -> TCheck ()
+addTypeDecl (FnDef pos (FunDef _ retType fname args _)) = do
     let argTypes = map (\(Arg _ t _) -> t) args
     declare (Fun pos retType argTypes) fname pos
 
+addTypeDecl (ClsDef pos name ext body) = do
+    addClass name ((\case { ExtNone _ -> Nothing; ExtSome _ x -> Just x }) ext) pos
 
-checkFDef :: PTopDef -> TCheck ()
-checkFDef (FnDef pos (FunDef _ retType fname args body@(Block _ stmts))) = do
+checkTopDef :: PTopDef -> TCheck ()
+checkTopDef (FnDef pos (FunDef _ retType fname args body@(Block _ stmts))) = do
     enterFunction retType
     mapM_ (\(Arg pos t i) -> declare t i pos) args  -- XXX
     mapM_ checkStmt stmts  -- XXX
@@ -40,6 +46,8 @@ checkFDef (FnDef pos (FunDef _ retType fname args body@(Block _ stmts))) = do
            (raise $ noReturn fname pos)
     leaveFunction
 
+checkTopDef (ClsDef _ name ext body) = do
+    return ()  -- TODO
 
 checkBlock :: PBlock -> TCheck ()
 checkBlock (Block _ stmts) = do
@@ -97,13 +105,13 @@ checkStmt (SExp _ expr) = void $ checkExpr expr
 checkExpr :: PExpr -> TCheck PType
 checkExpr (EVar pos ident) = typeof ident pos
 
-checkExpr (ELitTrue pos) = return $ Scalar pos $ Bool pos
+checkExpr (ELitTrue pos) = return $ Bool pos
 
-checkExpr (ELitFalse pos) = return $ Scalar pos $ Bool pos
+checkExpr (ELitFalse pos) = return $ Bool pos
 
-checkExpr (ELitInt pos _) = return $ Scalar pos $ Int pos
+checkExpr (ELitInt pos _) = return $ Int pos
 
-checkExpr (EString pos _) = return $ Scalar pos $ Str pos
+checkExpr (EString pos _) = return $ Str pos
 
 checkExpr (EAdd pos expr1 (Plus _) expr2) = do
     t1 <- checkExpr expr1
@@ -123,7 +131,7 @@ checkExpr (ERel pos expr1 op expr2) = do
     t1 <- checkExpr expr1
     t2 <- checkExpr expr2
     matchTypes t1 t2 pos
-    return $ Scalar pos $ Bool pos
+    return $ Bool pos
 
 checkExpr (EMul pos expr1 op expr2) = do
     t1 <- checkExpr expr1

@@ -1,14 +1,14 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module SemanticMonad where
+module Semantics.SemanticMonad where
 
 import qualified Data.Map as Map
 import Control.Monad (when)
 import Control.Monad.Except
 import Control.Monad.State
 import Data.Maybe (fromJust)
-import AbsLatte
-import TypeError
+import Parsing.AbsLatte
+import Semantics.TypeError
 
 -- TODO XXX: handling blocks by copying Env may be
 --           inefficient in terms of memory usage

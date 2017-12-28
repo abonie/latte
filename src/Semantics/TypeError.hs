@@ -1,9 +1,9 @@
 {-# Language DeriveFunctor #-}
 {-# Language FlexibleInstances #-}
 
-module TypeError where
+module Semantics.TypeError where
 import Data.List (intersperse)
-import AbsLatte
+import Parsing.AbsLatte
 
 
 data TypeError_ a = TypeMismatch a PType PType
@@ -61,7 +61,7 @@ multipleDeclarations (Ident name) pos = MultipleDeclarations $
 
 noReturn :: Ident -> PosInfo -> TypeError
 noReturn (Ident name) pos = NoReturn $
-    "TypeError: control may reach end of non-void function" <+> name ++ "declared at" <+> pPos pos
+    "TypeError: control may reach end of non-void function" <+> name <+> "declared at" <+> pPos pos
 
 
 otherError :: Maybe String -> PosInfo -> TypeError
