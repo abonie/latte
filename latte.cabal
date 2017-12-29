@@ -17,24 +17,23 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Parsing, Parsing.ErrM
-  other-modules:       Parsing.LexLatte, Parsing.ParLatte, Parsing.AbsLatte
-  build-depends:       base >=4.8 && <4.9, array
+  exposed-modules:     Parsing, Parsing.AbsLatte, Semantics, Semantics.TypeCheck, Errors.LatteError
+  other-modules:       Parsing.LexLatte, Parsing.ParLatte, Parsing.ErrM, Semantics.TypeError, Semantics.SemanticMonad
+  build-depends:       base >=4.8 && <4.9, array, containers >=0.5 && <0.6, mtl >=2.2 && <2.3
   build-tools:         alex, happy
   default-language:    Haskell2010
 
 executable latte
   main-is:             Main.hs
-  other-modules:       Parsing.LexLatte, Parsing.ParLatte, Parsing.AbsLatte, Parsing.ErrM, Semantics.SemanticMonad, Semantics.TypeCheck, Semantics.TypeError
+  other-modules:       Semantics.SemanticMonad, Semantics.TypeCheck, Errors.LatteError
   other-extensions:    FlexibleInstances, LambdaCase
-  build-depends:       base >=4.8 && <4.9, containers >=0.5 && <0.6, mtl >=2.2 && <2.3, HUnit >=1.2.5 && <1.7, directory >=1.2 && <1.3, filepath >=1.4 && <1.5, array, latte
+  build-depends:       base >=4.8 && <4.9, HUnit >=1.2.5 && <1.7, containers >=0.5 && <0.6, mtl >=2.2 && <2.3 , directory >=1.2 && <1.3, filepath >=1.4 && <1.5, array, latte
   hs-source-dirs:      src
-  --build-tools:         alex, happy
   default-language:    Haskell2010
 
 test-suite latte-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
-  build-depends:       base, latte, hspec
+  build-depends:       base, latte, hspec, filepath
   default-language:    Haskell2010

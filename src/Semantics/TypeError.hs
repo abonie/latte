@@ -1,38 +1,19 @@
-{-# Language DeriveFunctor #-}
-{-# Language FlexibleInstances #-}
-
-module Semantics.TypeError where
+module Semantics.TypeError (
+    typeMismatch,
+    undeclaredVariable,
+    multipleDeclarations,
+    noReturn,
+    otherError
+)
+where
 import Data.List (intersperse)
+import Errors.LatteError
 import Parsing.AbsLatte
-
-
-data TypeError_ a = TypeMismatch a PType PType
-               | UndeclaredVariable a
-               | MultipleDeclarations a
-               | NoReturn a
-               | OtherError a
-    deriving (Eq, Functor)
-
-
-type TypeError = TypeError_ String
-
-
-instance Show TypeError where
-    show (TypeMismatch s _ _) = s
-    show (UndeclaredVariable s) = s
-    show (MultipleDeclarations s) = s
-    show (NoReturn s) = s
-    show (OtherError s) = s
 
 
 (<+>) :: String -> String -> String
 x <+> "" = x
 x <+> y = x ++ " " ++ y
-
-
-pPos :: PosInfo -> String
-pPos (Just (lno, cno)) = "around line:" <+> (show lno) ++ ", col:" <+> (show cno)
-pPos Nothing = ""
 
 
 pType :: Type a -> String
@@ -43,28 +24,34 @@ pType (Void _) = "void"
 pType (Fun _ r a) = (pType r) ++ "(" ++ (concat (intersperse "," (map pType a))) ++ ")"
 
 
-typeMismatch :: PType -> PType -> PosInfo -> TypeError
-typeMismatch t1 t2 pos = TypeMismatch
+pPos :: PosInfo -> String
+pPos (Just (lno, cno)) = "around line:" <+> (show lno) ++ ", col:" <+> (show cno)
+pPos Nothing = ""
+
+
+typeMismatch :: PType -> PType -> PosInfo -> LatteError PType
+typeMismatch t1 t2 pos = TErr $ TypeMismatch
     ("TypeError: type mismatch, got" <+> (pType t1) ++ ", expected" <+> (pType t2) <+> pPos pos)
     t1 t2
 
 
-undeclaredVariable :: Ident -> PosInfo -> TypeError
-undeclaredVariable (Ident name) pos = UndeclaredVariable $
+undeclaredVariable :: Ident -> PosInfo -> LatteError PType
+undeclaredVariable (Ident name) pos = TErr $ UndeclaredVariable $
     "TypeError: undeclared variable" <+> name <+> pPos pos
 
 
-multipleDeclarations :: Ident -> PosInfo -> TypeError
-multipleDeclarations (Ident name) pos = MultipleDeclarations $
+multipleDeclarations :: Ident -> PosInfo -> LatteError PType
+multipleDeclarations (Ident name) pos = TErr $ MultipleDeclarations $
     "TypeError: multiple declarations of variable" <+> name <+> pPos pos
 
 
-noReturn :: Ident -> PosInfo -> TypeError
-noReturn (Ident name) pos = NoReturn $
+noReturn :: Ident -> PosInfo -> LatteError PType
+noReturn (Ident name) pos = TErr $ NoReturn $
     "TypeError: control may reach end of non-void function" <+> name <+> "declared at" <+> pPos pos
 
 
-otherError :: Maybe String -> PosInfo -> TypeError
-otherError mMsg pos = OtherError $ case mMsg of
+otherError :: Maybe String -> PosInfo -> LatteError PType
+otherError mMsg pos = TErr $ OtherError $ case mMsg of
     Nothing -> "TypeError occured" <+> pPos pos
     Just msg -> "TypeError:" <+> msg <+> pPos pos
+

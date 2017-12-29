@@ -1,0 +1,5 @@
+int main() {
+	if (3 < 4) {
+		return 0;
+	}
+}

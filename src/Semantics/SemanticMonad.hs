@@ -8,7 +8,8 @@ import Control.Monad.Except
 import Control.Monad.State
 import Data.Maybe (fromJust)
 import Parsing.AbsLatte
-import Semantics.TypeError
+import Errors.LatteError
+import Semantics.TypeError (typeMismatch, undeclaredVariable, multipleDeclarations, otherError)
 
 -- TODO XXX: handling blocks by copying Env may be
 --           inefficient in terms of memory usage
@@ -40,7 +41,7 @@ emptyEnv = Env 0 Nothing [Map.empty] Map.empty
 
 
 class Monad m => MonadSemanticCheck m where
-    raise :: TypeError -> m a
+    raise :: LatteError PType -> m b
     typeof :: Ident -> PosInfo -> m PType
     declare :: PType -> Ident -> PosInfo -> m ()
     addClass :: Ident -> Maybe Ident -> PosInfo -> m ()
@@ -50,10 +51,10 @@ class Monad m => MonadSemanticCheck m where
     leaveBlock :: m ()
     enterFunction :: PType -> m ()
     leaveFunction :: m ()
-    runTypeCheck :: m a -> Either TypeError SymTable
+    runTypeCheck :: m a -> Either (LatteError PType) SymTable
 
 
-type TCheck = ExceptT TypeError (State Env)
+type TCheck = ExceptT (LatteError PType) (State Env)
 
 
 instance MonadSemanticCheck TCheck where

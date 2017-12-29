@@ -6,6 +6,7 @@ import Control.Monad (void, unless)
 import Parsing.AbsLatte
 import Semantics.SemanticMonad
 import Semantics.TypeError
+import Errors.LatteError
 
 
 returns :: PStmt -> Bool
@@ -16,7 +17,7 @@ returns (BStmt _ (Block _ stmts)) = any returns stmts
 returns _ = False
 
 
-typeCheck :: PProgram -> Either TypeError SymTable
+typeCheck :: PProgram -> Either (LatteError PType) SymTable
 typeCheck prog = runTypeCheck $ checkProg prog
 
 

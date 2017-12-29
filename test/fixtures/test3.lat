@@ -1,0 +1,8 @@
+int main() {
+  string x = "xyz";
+  foo(x==1);
+  return 0;
+}
+
+void foo(boolean b) {
+}
