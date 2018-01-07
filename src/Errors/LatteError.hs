@@ -6,6 +6,7 @@ module Errors.LatteError where
 
 data LatteError a = TErr (TypeError a)
                   | ParserError String
+                  | CompileError
     deriving (Eq, Show)
 
 

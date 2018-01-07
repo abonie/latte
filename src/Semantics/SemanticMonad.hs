@@ -23,12 +23,13 @@ type SymTable = Map.Map Ident (PType, Int)
 
 type TypeEnv = Map.Map Ident (Maybe Ident)
 
-data Env = Env {
-    blockDepth :: Int,
-    retType :: Maybe PType,
-    symTables :: [SymTable],
-    typeEnv :: TypeEnv
-}
+data Env
+    = Env {
+      blockDepth :: Int
+    , retType :: Maybe PType
+    , symTables :: [SymTable]
+    , typeEnv :: TypeEnv
+    }
 
 symTable :: Env -> SymTable
 symTable = head . symTables
@@ -51,7 +52,7 @@ class Monad m => MonadSemanticCheck m where
     leaveBlock :: m ()
     enterFunction :: PType -> m ()
     leaveFunction :: m ()
-    runTypeCheck :: m a -> Either (LatteError PType) SymTable
+    runTypeCheck :: m a -> Either (LatteError PType) a
 
 
 type TCheck = ExceptT (LatteError PType) (State Env)
@@ -107,5 +108,4 @@ instance MonadSemanticCheck TCheck where
         leaveBlock
         modify $ \s -> s { retType = Nothing }
 
-    runTypeCheck tc = let (val, state) = runState (runExceptT tc) emptyEnv in
-        (symTable state) <$ val
+    runTypeCheck tc = evalState (runExceptT tc) emptyEnv

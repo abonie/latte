@@ -6,14 +6,16 @@ import Control.Monad (when)
 import Parsing (parse)
 import Parsing.ErrM (Err(..))
 import Semantics.TypeCheck (typeCheck)
+import Compile.CodeGen (compile)
+import LLVM.Printer (printTree)
 
 main :: IO ()
 main = do
     args <- getArgs
     when (length args == 0) (die "Usage: lattec <file>" 1)
     f <- readFile $ head args
-    case parse f >>= typeCheck of
-        Right _ -> putStrLn "Great success!"
+    case parse f >>= typeCheck >>= compile of
+        Right m -> putStrLn $ printTree m
         Left err -> die (show err) 2
 
 
