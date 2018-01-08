@@ -26,6 +26,7 @@ data Instr
     | Bin Ident Binop Type Operand Operand
     | Phi Ident Type Operand Ident Operand Ident
     | Call Ident Type Ident [Carg]
+    | VCall Type Ident [Carg]
     | Cmp Ident Cmpop Type Operand Operand
     | Bitcast Ident Type Ident Type
     | Label Ident

@@ -9,38 +9,27 @@ import Semantics.TypeError
 import Errors.LatteError
 
 
-returns :: PStmt -> Bool
-returns (Ret _ _) = True
-returns (VRet _) = True
-returns (CondElse _ _ ifStmt elseStmt) = returns ifStmt && returns elseStmt
-returns (BStmt _ (Block _ stmts)) = any returns stmts
-returns _ = False
-
-
-type TypeInfo = (Maybe PType, Map.Map Ident PType)
-
-novars :: TypeInfo
-novars = (Nothing, Map.empty)
-
-typeInfo :: PType -> TypeInfo
-typeInfo t = (Just t, Map.empty)
-
--- XXX rename
-settype :: Functor f => PType -> f a -> f (a, TypeInfo)
-settype t = fmap $ flip (,) (Just t, Map.empty)
-
-mapnovars :: Functor f => f a -> f (a, TypeInfo)
-mapnovars = fmap $ flip (,) novars
-
 typeCheck :: PProgram -> Either (LatteError PType) (Program (PosInfo, TypeInfo))
 typeCheck prog = runTypeCheck $ checkProg prog
 
 
+builtins :: [TopDef PosInfo]
+builtins = [
+    FnDef nopos $ FunDef nopos (Void nopos)
+                               (Ident "printInt")
+                               [Arg nopos pInt (Ident "x")]
+                               (Block nopos []),
+    FnDef nopos $ FunDef nopos (Void nopos)
+                               (Ident "printString")
+                               [Arg nopos pStr (Ident "s")]
+                               (Block nopos [])
+    ]
+
+
 checkProg :: PProgram -> TCheck (Program (PosInfo, TypeInfo))
 checkProg (Program pos defs) = do
-    -- XXX ugly
-    mapM_ addTypeDecl $ filter (\case { FnDef _ _ -> False; _ -> True }) defs
-    mapM_ addTypeDecl $ filter (\case { FnDef _ _ -> True; _ -> False }) defs
+    mapM_ addTypeDecl builtins
+    mapM_ addTypeDecl defs
     defs' <- mapM checkTopDef defs
     return $ Program (pos, novars) defs'
 
@@ -68,12 +57,25 @@ checkTopDef (FnDef pos (FunDef posf retType fname args body@(Block posb stmts)))
 checkTopDef clsdef@(ClsDef pos name ext body) = do
     return $ mapnovars clsdef
 
+
 checkBlock :: PBlock -> TCheck (Block (PosInfo, TypeInfo))
 checkBlock (Block pos stmts) = do
     enterBlock
     stmts' <- mapM checkStmt stmts
     leaveBlock
     return $ Block (pos, novars) stmts'
+
+
+checkItem :: PType -> PItem -> TCheck (Item (PosInfo, TypeInfo))
+checkItem typ (NoInit pos ident) = do
+    declare typ ident pos
+    return $ NoInit (pos, (Just typ, Map.empty)) ident
+
+checkItem typ (Init pos ident expr) = do
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType typ pos
+    declare typ ident pos
+    return $ Init (pos, (Just typ, Map.empty)) ident expr'
 
 
 checkStmt :: PStmt -> TCheck (Stmt (PosInfo, TypeInfo))
@@ -83,15 +85,9 @@ checkStmt (BStmt pos block) = do
     block' <- checkBlock block
     return $ BStmt (pos, novars) block'
 
-checkStmt decl@(Decl _ typ items) = do
-    mapM_ foo items
-    return $ mapnovars decl
-  where  -- XXX rename foo
-    foo (NoInit pos ident) = declare typ ident pos
-    foo (Init pos ident expr) = do
-        (exprType, _) <- checkExpr expr
-        matchTypes exprType typ pos
-        declare typ ident pos
+checkStmt (Decl pos typ items) = do
+    items' <- mapM (checkItem typ) items
+    return $ Decl (pos, (Just typ, Map.empty)) (settype typ typ) items'
 
 checkStmt (Ass pos (LhsVar posv ident) expr) = do
     (exprType, expr') <- checkExpr expr
@@ -219,3 +215,29 @@ checkExpr (EApp pos fident args) = do
     let argTypes = map fst argsChecked
     matchTypes ftype (Fun nopos ret argTypes) pos
     return (ret, EApp (pos, typeInfo ret) fident args')
+
+
+-- utils
+
+returns :: PStmt -> Bool
+returns (Ret _ _) = True
+returns (VRet _) = True
+returns (CondElse _ _ ifStmt elseStmt) = returns ifStmt && returns elseStmt
+returns (BStmt _ (Block _ stmts)) = any returns stmts
+returns _ = False
+
+
+type TypeInfo = (Maybe PType, Map.Map Ident PType)
+
+novars :: TypeInfo
+novars = (Nothing, Map.empty)
+
+typeInfo :: PType -> TypeInfo
+typeInfo t = (Just t, Map.empty)
+
+-- XXX rename
+settype :: Functor f => PType -> f a -> f (a, TypeInfo)
+settype t = fmap $ flip (,) (Just t, Map.empty)
+
+mapnovars :: Functor f => f a -> f (a, TypeInfo)
+mapnovars = fmap $ flip (,) novars

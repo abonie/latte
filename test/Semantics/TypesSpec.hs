@@ -45,13 +45,16 @@ testCases = [
     ("bad025.lat", isNoReturn, "throws"),
     ("bad026.lat", isTypeMismatch pInt pStr, "throws"),
     ("bad027.lat", isTypeMismatch pStr pInt, "throws"),
-    ("goodblock5.lat", success, "accepts"),
-    ("goodblock4.lat", success, "accepts"),
-    ("goodblock3.lat", success, "accepts"),
-    ("goodblock2.lat", success, "accepts"),
-    ("goodblock.lat",  success, "accepts"),
-    --("goodcls.lat",    success, "accepts"), XXX TODO
-    ("goodfun.lat",    success, "accepts")]
+    ("goodblock5.lat",  success, "accepts"),
+    ("goodblock4.lat",  success, "accepts"),
+    ("goodblock3.lat",  success, "accepts"),
+    ("goodblock2.lat",  success, "accepts"),
+    ("goodblock.lat",   success, "accepts"),
+    --("goodcls.lat",     success, "accepts"), XXX TODO
+    ("goodfun.lat",     success, "accepts"),
+    ("printInt.lat",    success, "accepts builtin printInt"),
+    ("printString.lat", success, "accepts builtin printString")
+    ]
 
 
 success :: Either a b -> Bool

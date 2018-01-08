@@ -65,7 +65,11 @@ printInstr (Cmp res cmpop typ arg1 arg2) = (printIdent res) <=> (printCmpop cmpo
 printInstr (Call res typ fname args) = (printIdent res) <=> "call" <+> (printType typ)
                                                         <+> (printIdent fname) <+> (printCargs args)
 
-printInstr (Label ident) = (printIdent ident) ++ ":"
+printInstr (VCall typ fname args) = "call" <+> (printType typ)
+                                           <+> (printIdent fname)
+                                           <+> (printCargs args)
+
+printInstr (Label (Ident (_:t))) = (printIdent $ Ident t) ++ ":"
 
 printInstr (Bitcast res typ1 const typ2) = (printIdent res) <=> "bitcast" <+> (printType typ1)
                                                                           <+> (printIdent const)
@@ -98,7 +102,7 @@ printBinop Div = "idiv"
 printOperand :: Operand -> String
 printOperand (Reg ident) = printIdent ident
 printOperand (LitInt n) = show n
-printOperand (LitStr s) = 'c':s
+printOperand (LitStr s) = 'c':((init s) ++ "\\00\"")
 
 (<+>) :: String -> String -> String
 a <+> b = a ++ " " ++ b

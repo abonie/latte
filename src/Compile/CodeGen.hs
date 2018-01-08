@@ -14,8 +14,19 @@ compile :: Program (PosInfo, TypeInfo) -> Either (LatteError PType) LLVM.Module
 compile prog = runGen $ genProg prog
 
 
+globDecls :: [LLVM.TopDef]
+globDecls = [
+    LLVM.FunDec LLVM.Void
+                (LLVM.Ident "@printInt")
+                [LLVM.Arg LLVM.I32 (LLVM.Ident "%x")],
+    LLVM.FunDec LLVM.Void
+                (LLVM.Ident "@printString")
+                [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%s")]
+    ]
+    
 genProg :: Program (PosInfo, TypeInfo) -> LLGen ()
 genProg (Program _ defs) = do
+    mapM_ addDecl globDecls
     mapM_ genTopDef defs
 
 
@@ -63,7 +74,8 @@ genStmt (Decr _ (LhsVar _ ident)) = do
 
 genStmt (Ret _ expr) = do
     x <- genExpr expr
-    emit $ LLVM.Ret LLVM.I32 x  -- TODO XXX type
+    let t = typeToLLVM $ typeOfExpr expr
+    emit $ LLVM.Ret t x
 
 genStmt (VRet _) = do
     emit $ LLVM.VRet
@@ -182,13 +194,21 @@ genExpr (EOr _ expr1 expr2) = do
     return (LLVM.Reg r3)
 
 genExpr (EApp (_, (Just typ, _)) (Ident fname) args) = do
-    r <- newReg
+    --r <- newReg
     argValues <- mapM genExpr args
     let argTypes = map (typeToLLVM . typeOfExpr) args
     let cargs = map (uncurry LLVM.Carg) $ zip argTypes argValues
     -- XXX TODO type
-    emit $ LLVM.Call r (typeToLLVM typ) (LLVM.Ident '@':fname) cargs
-    return (LLVM.Reg r)
+    let lltype = typeToLLVM typ
+    let llid = LLVM.Ident ('@':fname)
+    case typ of
+        Void _ -> do
+            emit $ LLVM.VCall lltype llid cargs
+            return (LLVM.LitInt 0)  -- XXX ugly, but will be ignored
+        _ -> do
+            r <- newReg
+            emit $ LLVM.Call r lltype llid cargs
+            return (LLVM.Reg r)
 
 
 genBinop :: LLVM.Binop -> Expr (PosInfo, TypeInfo) -> Expr (PosInfo, TypeInfo) -> LLGen LLVM.Operand
