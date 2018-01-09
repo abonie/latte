@@ -1,0 +1,5 @@
+int main() {
+	string x = "foo";
+	printString(x);
+	return 0;
+}
