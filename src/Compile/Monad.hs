@@ -18,7 +18,8 @@ class Monad m => MonadCodeGen m where
     newLabel :: m LLVM.Ident
     newReg :: m LLVM.Ident
     addDecl :: LLVM.TopDef -> m ()
-    addStr :: String -> m LLVM.Ident
+    addStr :: String -> LLVM.Ident -> m LLVM.Ident
+    callStrlen :: LLVM.Operand -> m LLVM.Operand
     addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
     setVar :: Ident -> LLVM.Operand -> m ()
     getVar :: Ident -> m LLVM.Operand
@@ -94,7 +95,7 @@ instance MonadCodeGen LLGen where
         declarations <- gets decls
         modify $ \s -> s { decls = d:declarations }
 
-    addStr str = do
+    addStr str r = do
         n <- gets count
         modify $ \s -> s { count = n + 1 }
         let globname = LLVM.Ident $ "@str" ++ (show n)
@@ -115,11 +116,16 @@ instance MonadCodeGen LLGen where
             Nothing -> throwError CompileError -- TODO
             Just (reg, typ) -> emit $ LLVM.Store typ val reg
 
+    callStrlen reg = do
+        res <- newReg
+        emit $ LLVM.Call res LLVM.I64 (LLVM.Ident "@strlen") [LLVM.Carg (LLVM.Ptr LLVM.I8) reg]
+        return $ LLVM.Reg res
+
     getVar ident = do
         vs <- gets vars
         case lookupNested ident vs of
             Nothing -> throwError CompileError -- TODO
-            Just (reg, typ) -> do
+            Just (reg@(LLVM.Reg ident), typ) -> do
                 res <- newReg
                 emit $ LLVM.Load res typ reg
                 return $ LLVM.Reg res

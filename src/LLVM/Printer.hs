@@ -23,6 +23,7 @@ printTopDef (ConstDef name typ init) = (printIdent name) <=> "constant" <+> (pri
 
 
 printType :: Type -> String
+printType I64 = "i64"
 printType I32 = "i32"
 printType I8 = "i8"
 printType I1 = "i1"
@@ -82,6 +83,12 @@ printInstr (Label (Ident (_:t))) = (printIdent $ Ident t) ++ ":"
 printInstr (Bitcast res typ1 const typ2) = (printIdent res) <=> "bitcast" <+> (printType typ1)
                                                                           <+> (printIdent const)
                                                                           <+> "to" <+> (printType typ2)
+
+printInstr (GEP res typ ptr idx) = (printIdent res) <=> "getelementptr" <+> (printType typ) ++ ", "
+                                                                        ++ (printType $ Ptr typ)
+                                                                        <+> (printOperand ptr) ++ ", "
+                                                                        ++ (printType I64)
+                                                                        <+> (printOperand idx)
 
 
 printCargs :: [Carg] -> String

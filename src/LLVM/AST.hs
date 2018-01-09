@@ -32,6 +32,7 @@ data Instr
     | VCall Type Ident [Carg]
     | Cmp Ident Cmpop Type Operand Operand
     | Bitcast Ident Type Ident Type
+    | GEP Ident Type Operand Operand
     | Label Ident
   deriving (Eq, Ord, Show, Read)
 
@@ -48,7 +49,8 @@ data Operand = Reg Ident | LitInt Integer | LitStr String | Undef
   deriving (Eq, Ord, Show, Read)
 
 data Type
-    = I32
+    = I64
+    | I32
     | I8
     | I1
     | Void

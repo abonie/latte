@@ -3,7 +3,7 @@
 module Compile.CodeGen where
 import qualified LLVM
 import qualified Data.Map as Map
-import Control.Monad (void, forM_, forM, liftM)
+import Control.Monad (void, forM_, forM, liftM, when)
 import Data.Maybe (fromJust)
 import Parsing.AbsLatte
 import Errors.LatteError
@@ -25,7 +25,23 @@ globDecls = [
                 [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%s")],
     LLVM.FunDec LLVM.I32
                 (LLVM.Ident "@readInt")
-                []
+                [],
+    LLVM.FunDec (LLVM.Ptr LLVM.I8)
+                (LLVM.Ident "@readString")
+                [],
+    LLVM.FunDec LLVM.Void
+                (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
+                [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%dst"),
+                 LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%src"),
+                 LLVM.Arg LLVM.I64 (LLVM.Ident "%len"),
+                 LLVM.Arg LLVM.I32 (LLVM.Ident "%algn"),
+                 LLVM.Arg LLVM.I1 (LLVM.Ident "%volatile")],
+    LLVM.FunDec LLVM.I64
+                (LLVM.Ident "@strlen")
+                [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%str")],
+    LLVM.FunDec (LLVM.Ptr LLVM.I8)
+                (LLVM.Ident "@malloc")
+                [LLVM.Arg LLVM.I64 (LLVM.Ident "%n")]
     ]
     
 genProg :: Program (PosInfo, TypeInfo) -> LLGen ()
@@ -125,9 +141,10 @@ genStmt (SExp _ expr) = void $ genExpr expr
 
 
 genExpr :: Expr (PosInfo, TypeInfo) -> LLGen LLVM.Operand
-genExpr (EVar _ ident) = getVar ident
+genExpr (EVar _ ident) = do
+    getVar ident
 
-genExpr (ELitTrue _) = return $ LLVM.LitInt 1  -- XXX
+genExpr (ELitTrue _) = return $ LLVM.LitInt 1
 
 genExpr (ELitFalse _) = return $ LLVM.LitInt 0
 
@@ -135,12 +152,44 @@ genExpr (ELitInt _ n) = return $ LLVM.LitInt n
 
 genExpr (EString _ s) = do
     r <- newReg
-    glob <- addStr s
+    glob <- addStr s r
     let len = (length s) - 1
     emit $ LLVM.Bitcast r (LLVM.Ptr (LLVM.Array len LLVM.I8)) glob (LLVM.Ptr LLVM.I8)
     return (LLVM.Reg r)
 
-genExpr (EAdd _ expr1 op expr2) = genBinop (addOp2LLVM op) expr1 expr2  -- TODO XXX check for strings
+genExpr (EAdd (_, (Just typ, _)) expr1 op expr2) = case typ of
+    Int _ -> genBinop (addOp2LLVM op) expr1 expr2
+    Str _ -> do
+        -- TODO check if operator is Add ?
+        x1 <- genExpr expr1
+        x2 <- genExpr expr2
+        l1Reg <- callStrlen x1
+        l2Reg <- callStrlen x2
+        len <- newReg
+        emit $ LLVM.Bin len LLVM.Add LLVM.I64 l1Reg l2Reg
+        res <- newReg
+        emit $ LLVM.Call res (LLVM.Ptr LLVM.I8) (LLVM.Ident "@malloc") [LLVM.Carg LLVM.I64 (LLVM.Reg len)]
+        let args1 = [
+                LLVM.Carg (LLVM.Ptr LLVM.I8) (LLVM.Reg res),
+                LLVM.Carg (LLVM.Ptr LLVM.I8) x1,
+                LLVM.Carg LLVM.I64 l1Reg,
+                LLVM.Carg LLVM.I32 (LLVM.LitInt 0),
+                LLVM.Carg LLVM.I1 (LLVM.LitInt 1)
+                ]
+        emit $ LLVM.VCall LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64") args1
+        ptr <- newReg
+        emit $ LLVM.GEP ptr LLVM.I8 (LLVM.Reg res) l1Reg
+        l2plus1 <- newReg
+        emit $ LLVM.Bin l2plus1 LLVM.Add LLVM.I64 l1Reg (LLVM.LitInt 1)
+        let args2 = [
+                LLVM.Carg (LLVM.Ptr LLVM.I8) (LLVM.Reg ptr),
+                LLVM.Carg (LLVM.Ptr LLVM.I8) x2,
+                LLVM.Carg LLVM.I64 (LLVM.Reg l2plus1),
+                LLVM.Carg LLVM.I32 (LLVM.LitInt 0),
+                LLVM.Carg LLVM.I1 (LLVM.LitInt 1)
+                    ]
+        emit $ LLVM.VCall LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64") args2
+        return $ LLVM.Reg res
 
 genExpr (EMul _ expr1 op expr2) = genBinop (mulOp2LLVM op) expr1 expr2
 
@@ -259,14 +308,3 @@ typeOfExpr (EAdd (_, (Just t, _)) _ _ _) = t
 typeOfExpr (ERel _ _ _ _) = pBool
 typeOfExpr (EAnd _ _ _ ) = pBool
 typeOfExpr (EOr _ _ _) = pBool
-
--- rename?
-usedVars :: Stmt a -> [Ident]
-usedVars (BStmt _ (Block _ stmts)) = concatMap usedVars stmts
-usedVars (Ass _ (LhsVar _ ident) _) = [ident]
-usedVars (Incr _ (LhsVar _ ident)) = [ident]
-usedVars (Decr _ (LhsVar _ ident)) = [ident]
-usedVars (Cond _ _ stmt) = usedVars stmt
-usedVars (CondElse _ _ s1 s2) = (usedVars s1) ++ (usedVars s2)
-usedVars (While _ _ stmt) = usedVars stmt
-usedVars _ = []
