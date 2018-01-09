@@ -2,7 +2,8 @@
 
 module Compile.CodeGen where
 import qualified LLVM
-import Control.Monad (void)
+import qualified Data.Map as Map
+import Control.Monad (void, forM_, forM, liftM)
 import Data.Maybe (fromJust)
 import Parsing.AbsLatte
 import Errors.LatteError
@@ -21,7 +22,10 @@ globDecls = [
                 [LLVM.Arg LLVM.I32 (LLVM.Ident "%x")],
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@printString")
-                [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%s")]
+                [LLVM.Arg (LLVM.Ptr LLVM.I8) (LLVM.Ident "%s")],
+    LLVM.FunDec LLVM.I32
+                (LLVM.Ident "@readInt")
+                []
     ]
     
 genProg :: Program (PosInfo, TypeInfo) -> LLGen ()
@@ -86,38 +90,64 @@ genStmt (Cond _ expr stmt) = do
     ltrue <- newLabel
     lfalse <- newLabel
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
-    emit $ LLVM.Label ltrue
-    startPhi
+    beginBasicBlock ltrue
     genStmt stmt
+    (phis, lnew) <- endBasicBlock
     emit $ LLVM.Br (LLVM.Reg lfalse)
-    emit $ LLVM.Label lfalse
-    endPhi lold ltrue
+    setLabel lfalse
+    forM_ (Map.assocs phis) (\(ident, (old, new)) -> do
+        r <- newReg
+        -- TODO type
+        emit $ LLVM.Phi r LLVM.I32 old lold new lnew
+        setVar ident (LLVM.Reg r) )
 
 genStmt (CondElse _ expr trueStmt falseStmt) = do
     x <- genExpr expr
+    lold <- currentLabel
     ltrue <- newLabel
     lfalse <- newLabel
     lafter <- newLabel
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
-    emit $ LLVM.Label ltrue
+    beginBasicBlock ltrue
     genStmt trueStmt
+    (phisTrue, endLabelTrue) <- endBasicBlock
     emit $ LLVM.Br (LLVM.Reg lafter)
-    emit $ LLVM.Label lfalse
+    beginBasicBlock lfalse
     genStmt falseStmt
+    (phisFalse, endLabelFalse) <- endBasicBlock
     emit $ LLVM.Br (LLVM.Reg lafter)
-    emit $ LLVM.Label lafter
+    setLabel lafter
+    -- TODO XXX boilerplate
+    let phis = Map.unionWith (\t f -> (snd t, snd f)) phisTrue phisFalse
+    forM_ (Map.assocs phis) (\(ident, (true, false)) -> do
+        r <- newReg
+        -- TODO type
+        emit $ LLVM.Phi r LLVM.I32 true endLabelTrue false endLabelFalse
+        setVar ident (LLVM.Reg r) )
 
 genStmt (While _ expr stmt) = do
+    lold <- currentLabel
     lcond <- newLabel
     lloop <- newLabel
     lafter <- newLabel
-    emit $ LLVM.Label lcond
+    emit $ LLVM.Br (LLVM.Reg lcond)
+    let usd = usedVars stmt
+    mapping <- (liftM Map.fromList) $ forM usd (\ident -> do
+        r <- newReg
+        prev <- getVar ident
+        setVar ident (LLVM.Reg r)
+        return (ident, prev) )
+    beginBasicBlock lloop
+    genStmt stmt
+    (phis, lnew) <- endBasicBlock
+    emit $ LLVM.Br (LLVM.Reg lcond)
+    setLabel lcond
+    forM_ (Map.assocs phis) (\(ident, ((LLVM.Reg r), new)) -> do
+        emit $ LLVM.Phi r LLVM.I32 (mapping Map.! ident) lold new lnew
+        setVar ident (LLVM.Reg r) )
     x <- genExpr expr
     emit $ LLVM.Cbr x (LLVM.Reg lloop) (LLVM.Reg lafter)
-    emit $ LLVM.Label lloop
-    genStmt stmt
-    emit $ LLVM.Br (LLVM.Reg lcond)
-    emit $ LLVM.Label lafter
+    setLabel lafter
 
 genStmt (SExp _ expr) = void $ genExpr expr
 
@@ -146,7 +176,8 @@ genExpr (ERel _ expr1 op expr2) = do
     r <- newReg
     x1 <- genExpr expr1
     x2 <- genExpr expr2
-    emit $ LLVM.Cmp r (cmpOp2LLVM op) LLVM.I1 x1 x2
+    -- XXX
+    emit $ LLVM.Cmp r (cmpOp2LLVM op) LLVM.I32 x1 x2
     return (LLVM.Reg r)
 
 genExpr (Not _ expr) = do
@@ -169,10 +200,10 @@ genExpr (EAnd _ expr1 expr2) = do
     l3 <- newLabel
     emit $ LLVM.Cmp r1 LLVM.Eq LLVM.I1 x1 (LLVM.LitInt 0)
     emit $ LLVM.Cbr (LLVM.Reg r1) (LLVM.Reg l3) (LLVM.Reg l2)
-    emit $ LLVM.Label l2
+    setLabel l2
     x2 <- genExpr expr2
     emit $ LLVM.Br (LLVM.Reg l3)
-    emit $ LLVM.Label l3
+    setLabel l3
     r3 <- newReg
     emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 0) l1 x2 l2
     return (LLVM.Reg r3)
@@ -185,20 +216,18 @@ genExpr (EOr _ expr1 expr2) = do
     l3 <- newLabel
     emit $ LLVM.Cmp r1 LLVM.Eq LLVM.I1 x1 (LLVM.LitInt 1)
     emit $ LLVM.Cbr (LLVM.Reg r1) (LLVM.Reg l3) (LLVM.Reg l2)
-    emit $ LLVM.Label l2
+    setLabel l2
     x2 <- genExpr expr2
     emit $ LLVM.Br (LLVM.Reg l3)
-    emit $ LLVM.Label l3
+    setLabel l3
     r3 <- newReg
     emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 1) l1 x2 l2
     return (LLVM.Reg r3)
 
 genExpr (EApp (_, (Just typ, _)) (Ident fname) args) = do
-    --r <- newReg
     argValues <- mapM genExpr args
     let argTypes = map (typeToLLVM . typeOfExpr) args
     let cargs = map (uncurry LLVM.Carg) $ zip argTypes argValues
-    -- XXX TODO type
     let lltype = typeToLLVM typ
     let llid = LLVM.Ident ('@':fname)
     case typ of
@@ -236,6 +265,7 @@ addOp2LLVM (Minus _) = LLVM.Sub
 mulOp2LLVM :: MulOp a -> LLVM.Binop
 mulOp2LLVM (Times _) = LLVM.Mul
 mulOp2LLVM (Div _) = LLVM.Div
+mulOp2LLVM (Mod _) = LLVM.Rem
 
 typeOfExpr :: Expr (PosInfo, TypeInfo) -> PType
 typeOfExpr (EVar (_, (Just t, _)) _) = t
@@ -257,3 +287,14 @@ typeOfExpr (EAdd (_, (Just t, _)) _ _ _) = t
 typeOfExpr (ERel _ _ _ _) = pBool
 typeOfExpr (EAnd _ _ _ ) = pBool
 typeOfExpr (EOr _ _ _) = pBool
+
+-- rename?
+usedVars :: Stmt a -> [Ident]
+usedVars (BStmt _ (Block _ stmts)) = concatMap usedVars stmts
+usedVars (Ass _ (LhsVar _ ident) _) = [ident]
+usedVars (Incr _ (LhsVar _ ident)) = [ident]
+usedVars (Decr _ (LhsVar _ ident)) = [ident]
+usedVars (Cond _ _ stmt) = usedVars stmt
+usedVars (CondElse _ _ s1 s2) = (usedVars s1) ++ (usedVars s2)
+usedVars (While _ _ stmt) = usedVars stmt
+usedVars _ = []

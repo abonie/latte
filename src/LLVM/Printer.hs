@@ -59,7 +59,7 @@ printInstr (Phi res typ op1 l1 op2 l2) = (printIdent res) <=> "phi" <+> (printTy
                                                           ++ (printOperand op1) ++ ", " ++ (printIdent l1) ++ "], ["
                                                           ++ (printOperand op2) ++ ", " ++ (printIdent l2) ++ "]"
 
-printInstr (Cmp res cmpop typ arg1 arg2) = (printIdent res) <=> (printCmpop cmpop) <+> (printType typ)
+printInstr (Cmp res cmpop typ arg1 arg2) = (printIdent res) <=> "icmp" <+> (printCmpop cmpop) <+> (printType typ)
                                                             <+> (printOperand arg1) ++ ", " ++ (printOperand arg2)
 
 printInstr (Call res typ fname args) = (printIdent res) <=> "call" <+> (printType typ)
@@ -86,10 +86,10 @@ printCargs' (a:as) = (printCargs' [a]) ++ ", " ++ (printCargs' as)
 printCmpop :: Cmpop -> String
 printCmpop Eq = "eq"
 printCmpop Ne = "ne"
-printCmpop Gt = "gt"
-printCmpop Ge = "ge"
-printCmpop Lt = "lt"
-printCmpop Le = "le"
+printCmpop Gt = "sgt"
+printCmpop Ge = "sge"
+printCmpop Lt = "slt"
+printCmpop Le = "sle"
 
 
 printBinop :: Binop -> String
@@ -97,12 +97,14 @@ printBinop Add = "add"
 printBinop Sub = "sub"
 printBinop Mul = "mul"
 printBinop Div = "idiv"
+printBinop Rem = "srem"
 
 
 printOperand :: Operand -> String
 printOperand (Reg ident) = printIdent ident
 printOperand (LitInt n) = show n
 printOperand (LitStr s) = 'c':((init s) ++ "\\00\"")
+printOperand Undef = "undef"
 
 (<+>) :: String -> String -> String
 a <+> b = a ++ " " ++ b

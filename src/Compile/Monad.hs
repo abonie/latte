@@ -3,7 +3,7 @@
 module Compile.Monad where
 import qualified LLVM
 import qualified Data.Map as Map
-import Data.Maybe (fromJust)
+import qualified Data.Set as Set
 import Control.Monad (unless)
 import Control.Monad.Except
 import Control.Monad.State
@@ -25,8 +25,9 @@ class Monad m => MonadCodeGen m where
     endScope :: m ()
     beginFunction :: Type (PosInfo, TypeInfo) -> Ident -> [Arg (PosInfo, TypeInfo)] -> m ()
     endFunction :: m ()
-    startPhi :: m ()
-    endPhi :: LLVM.Ident -> LLVM.Ident -> m ()
+    beginBasicBlock :: LLVM.Ident -> m ()
+    endBasicBlock :: m ((Map.Map Ident (LLVM.Operand, LLVM.Operand)), LLVM.Ident)
+    setLabel :: LLVM.Ident -> m ()
     currentLabel :: m LLVM.Ident
     runGen :: m () -> Either (LatteError PType) LLVM.Module
 
@@ -36,32 +37,34 @@ type LLGen = ExceptT (LatteError PType) (State Env)
 
 data Env
     = Env {
-      vars :: VarEnv
+      vars :: [VarEnv]
     , signs :: FunEnv
     , code :: Code
     , decls :: [LLVM.TopDef]
     , scope :: Ident
     , count :: Integer
-    , phis :: [Map.Map Ident (LLVM.Operand, LLVM.Operand)]
+    , used :: [Set.Set Ident]
     , label :: LLVM.Ident
     }
 
-type VarEnv = Map.Map Ident (Maybe LLVM.Operand) -- TODO type?
+type VarEnv = Map.Map Ident LLVM.Operand
 
 type FunEnv = Map.Map Ident (Type (), [Arg ()])
 
 type Code = Map.Map Ident [LLVM.Instr]
 
-emptyEnv = Env {
-            vars = Map.empty
-          , signs = Map.empty
-          , code = Map.empty
-          , decls = []
-          , scope = Ident ""
-          , count = 0
-          , phis = []
-          , label = LLVM.Ident "%0"
-          }
+emptyEnv :: Env
+emptyEnv
+    = Env {
+      vars = [Map.empty]
+    , signs = Map.empty
+    , code = Map.empty
+    , decls = []
+    , scope = Ident ""
+    , count = 0
+    , used = []
+    , label = LLVM.Ident "%0"
+    }
 
 
 instance MonadCodeGen LLGen where
@@ -93,26 +96,23 @@ instance MonadCodeGen LLGen where
         return globname
 
     addVar _ ident _ = do
-        vs <- gets vars
-        modify $ \s -> s { vars = Map.insert ident Nothing vs }
+        (vs:tl) <- gets vars
+        modify $ \s -> s { vars = (Map.insert ident LLVM.Undef vs):tl }
 
     setVar ident val = do
-        vs <- gets vars
-        p <- gets phis
-        unless (null p) $ do
-            let h = head p
-            let newh = if Map.member ident h
-                        then Map.insertWith (\(old, _) (_, new) -> (old, new)) ident (val, val) h
-                        else let old = fromJust (vs Map.! ident) in Map.insert ident (old, val) h
-            modify $ \s -> s { phis = newh:(tail p) }
-        modify $ \s -> s { vars = Map.insert ident (Just val) vs }
+        (vs:tl) <- gets vars
+        us <- gets used
+        unless (null us) $ do
+            let (u:tl) = us
+            modify $ \s -> s { used = (Set.insert ident u):tl }
+        modify $ \s -> s { vars = (Map.insert ident val vs):tl }
 
     getVar ident = do
-        vs <- gets vars
+        (vs:_) <- gets vars
         unless (Map.member ident vs) (throwError CompileError)  -- TODO
         let val = vs Map.! ident
-        when (val == Nothing) (throwError CompileError)  -- TODO
-        return $ fromJust val
+        --when (val == LLVM.Undef) (throwError CompileError)  -- TODO
+        return val
 
     beginScope = return ()  -- TODO
 
@@ -127,17 +127,25 @@ instance MonadCodeGen LLGen where
     endFunction = do
         modify $ \s -> s { scope = Ident "" }
 
-    startPhi = do
-        p <- gets phis
-        modify $ \s -> s { phis = Map.empty:p }
+    setLabel lab = do
+        emit $ LLVM.Label lab
+        modify $ \s -> s { label = lab }
 
-    endPhi l1 l2 = do
-        (h:t) <- gets phis
-        forM_ (Map.assocs h) (\(ident, (old, new)) -> do
-            r <- newReg
-            emit $ LLVM.Phi r LLVM.I32 old l1 new l2
-            setVar ident (LLVM.Reg r) )
-        modify $ \s -> s { phis = t }
+    beginBasicBlock lab = do
+        setLabel lab
+        us <- gets used
+        modify $ \s -> s { used = Set.empty:us }
+        (vs:tl) <- gets vars
+        modify $ \s -> s { vars = vs:vs:tl }
+
+    endBasicBlock = do
+        (u:us) <- gets used
+        modify $ \s -> s { used = us }
+        (vs:tl) <- gets vars
+        modify $ \s -> s { vars = tl }
+        let prev = head tl
+        lab <- currentLabel
+        return (Map.fromList $ map (\ident -> (ident, (prev Map.! ident, vs Map.! ident))) $ filter (flip Map.member prev) $ Set.toList u, lab)
 
     currentLabel = do
         l <- gets label

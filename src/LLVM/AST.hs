@@ -35,13 +35,13 @@ data Instr
 data Carg = Carg Type Operand
   deriving (Eq, Ord, Show, Read)
 
-data Binop = Add | Sub | Mul | Div
+data Binop = Add | Sub | Mul | Div | Rem
   deriving (Eq, Ord, Show, Read)
 
 data Cmpop = Eq | Ne | Gt | Ge | Lt | Le
   deriving (Eq, Ord, Show, Read)
 
-data Operand = Reg Ident | LitInt Integer | LitStr String
+data Operand = Reg Ident | LitInt Integer | LitStr String | Undef
   deriving (Eq, Ord, Show, Read)
 
 data Type

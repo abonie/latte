@@ -15,13 +15,21 @@ typeCheck prog = runTypeCheck $ checkProg prog
 
 builtins :: [TopDef PosInfo]
 builtins = [
-    FnDef nopos $ FunDef nopos (Void nopos)
+    FnDef nopos $ FunDef nopos (pVoid)
                                (Ident "printInt")
                                [Arg nopos pInt (Ident "x")]
                                (Block nopos []),
-    FnDef nopos $ FunDef nopos (Void nopos)
+    FnDef nopos $ FunDef nopos (pVoid)
                                (Ident "printString")
                                [Arg nopos pStr (Ident "s")]
+                               (Block nopos []),
+    FnDef nopos $ FunDef nopos (pInt)
+                               (Ident "readInt")
+                               []
+                               (Block nopos []),
+    FnDef nopos $ FunDef nopos (pStr)
+                               (Ident "readString")
+                               []
                                (Block nopos [])
     ]
 
