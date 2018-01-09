@@ -43,7 +43,7 @@ genTopDef (FnDef _ (FunDef _ retType fname args body@(Block _ stmts))) = do
 
 genBlock :: Block (PosInfo, TypeInfo) -> LLGen ()
 genBlock (Block _ stmts) = do
-    beginScope
+    newScope
     mapM_ genStmt stmts
     endScope
 
@@ -86,67 +86,39 @@ genStmt (VRet _) = do
 
 genStmt (Cond _ expr stmt) = do
     x <- genExpr expr
-    lold <- currentLabel
     ltrue <- newLabel
     lfalse <- newLabel
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
-    beginBasicBlock ltrue
+    setLabel ltrue
     genStmt stmt
-    (phis, lnew) <- endBasicBlock
     emit $ LLVM.Br (LLVM.Reg lfalse)
     setLabel lfalse
-    forM_ (Map.assocs phis) (\(ident, (old, new)) -> do
-        r <- newReg
-        -- TODO type
-        emit $ LLVM.Phi r LLVM.I32 old lold new lnew
-        setVar ident (LLVM.Reg r) )
 
-genStmt (CondElse _ expr trueStmt falseStmt) = do
+genStmt (CondElse _ expr tStmt fStmt) = do
     x <- genExpr expr
-    lold <- currentLabel
     ltrue <- newLabel
     lfalse <- newLabel
     lafter <- newLabel
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
-    beginBasicBlock ltrue
-    genStmt trueStmt
-    (phisTrue, endLabelTrue) <- endBasicBlock
+    setLabel ltrue
+    genStmt tStmt
     emit $ LLVM.Br (LLVM.Reg lafter)
-    beginBasicBlock lfalse
-    genStmt falseStmt
-    (phisFalse, endLabelFalse) <- endBasicBlock
+    setLabel lfalse
+    genStmt fStmt
     emit $ LLVM.Br (LLVM.Reg lafter)
     setLabel lafter
-    -- TODO XXX boilerplate
-    let phis = Map.unionWith (\t f -> (snd t, snd f)) phisTrue phisFalse
-    forM_ (Map.assocs phis) (\(ident, (true, false)) -> do
-        r <- newReg
-        -- TODO type
-        emit $ LLVM.Phi r LLVM.I32 true endLabelTrue false endLabelFalse
-        setVar ident (LLVM.Reg r) )
 
 genStmt (While _ expr stmt) = do
-    lold <- currentLabel
     lcond <- newLabel
     lloop <- newLabel
     lafter <- newLabel
     emit $ LLVM.Br (LLVM.Reg lcond)
-    let usd = usedVars stmt
-    mapping <- (liftM Map.fromList) $ forM usd (\ident -> do
-        r <- newReg
-        prev <- getVar ident
-        setVar ident (LLVM.Reg r)
-        return (ident, prev) )
-    beginBasicBlock lloop
-    genStmt stmt
-    (phis, lnew) <- endBasicBlock
-    emit $ LLVM.Br (LLVM.Reg lcond)
     setLabel lcond
-    forM_ (Map.assocs phis) (\(ident, ((LLVM.Reg r), new)) -> do
-        emit $ LLVM.Phi r LLVM.I32 (mapping Map.! ident) lold new lnew
-        setVar ident (LLVM.Reg r) )
     x <- genExpr expr
     emit $ LLVM.Cbr x (LLVM.Reg lloop) (LLVM.Reg lafter)
+    setLabel lloop
+    genStmt stmt
+    emit $ LLVM.Br (LLVM.Reg lcond)
     setLabel lafter
 
 genStmt (SExp _ expr) = void $ genExpr expr

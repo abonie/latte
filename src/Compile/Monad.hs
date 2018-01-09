@@ -4,6 +4,7 @@ module Compile.Monad where
 import qualified LLVM
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.Maybe (isJust)
 import Control.Monad (unless)
 import Control.Monad.Except
 import Control.Monad.State
@@ -21,12 +22,10 @@ class Monad m => MonadCodeGen m where
     addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
     setVar :: Ident -> LLVM.Operand -> m ()
     getVar :: Ident -> m LLVM.Operand
-    beginScope :: m ()
+    newScope :: m ()
     endScope :: m ()
     beginFunction :: Type (PosInfo, TypeInfo) -> Ident -> [Arg (PosInfo, TypeInfo)] -> m ()
     endFunction :: m ()
-    beginBasicBlock :: LLVM.Ident -> m ()
-    endBasicBlock :: m ((Map.Map Ident (LLVM.Operand, LLVM.Operand)), LLVM.Ident)
     setLabel :: LLVM.Ident -> m ()
     currentLabel :: m LLVM.Ident
     runGen :: m () -> Either (LatteError PType) LLVM.Module
@@ -43,11 +42,20 @@ data Env
     , decls :: [LLVM.TopDef]
     , scope :: Ident
     , count :: Integer
-    , used :: [Set.Set Ident]
     , label :: LLVM.Ident
     }
 
-type VarEnv = Map.Map Ident LLVM.Operand
+type VarEnv = Map.Map Ident (LLVM.Operand, LLVM.Type)
+
+lookupNested :: Ord k => k -> [Map.Map k a] -> Maybe a
+lookupNested key = foldl foo Nothing where
+    foo acc map = case acc of
+        Nothing -> Map.lookup key map
+        _ -> acc
+
+memberNested :: Ord k => k -> [Map.Map k a] -> Bool
+memberNested key = isJust . lookupNested key
+
 
 type FunEnv = Map.Map Ident (Type (), [Arg ()])
 
@@ -62,7 +70,6 @@ emptyEnv
     , decls = []
     , scope = Ident ""
     , count = 0
-    , used = []
     , label = LLVM.Ident "%0"
     }
 
@@ -95,57 +102,51 @@ instance MonadCodeGen LLGen where
         addDecl $ LLVM.ConstDef globname atype (LLVM.LitStr str)
         return globname
 
-    addVar _ ident _ = do
+    addVar typ ident _ = do  -- TODO blank: _
+        r <- newReg
+        let typ' = (typeToLLVM typ)
+        emit $ LLVM.Alloc r typ'
         (vs:tl) <- gets vars
-        modify $ \s -> s { vars = (Map.insert ident LLVM.Undef vs):tl }
+        modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg r), typ') vs):tl }
 
     setVar ident val = do
-        (vs:tl) <- gets vars
-        us <- gets used
-        unless (null us) $ do
-            let (u:tl) = us
-            modify $ \s -> s { used = (Set.insert ident u):tl }
-        modify $ \s -> s { vars = (Map.insert ident val vs):tl }
+        vs <- gets vars
+        case lookupNested ident vs of
+            Nothing -> throwError CompileError -- TODO
+            Just (reg, typ) -> emit $ LLVM.Store typ val reg
 
     getVar ident = do
-        (vs:_) <- gets vars
-        unless (Map.member ident vs) (throwError CompileError)  -- TODO
-        let val = vs Map.! ident
-        --when (val == LLVM.Undef) (throwError CompileError)  -- TODO
-        return val
+        vs <- gets vars
+        case lookupNested ident vs of
+            Nothing -> throwError CompileError -- TODO
+            Just (reg, typ) -> do
+                res <- newReg
+                emit $ LLVM.Load res typ reg
+                return $ LLVM.Reg res
 
-    beginScope = return ()  -- TODO
+    newScope = do
+        vs <- gets vars
+        modify $ \s -> s { vars = Map.empty:vs }
 
-    endScope = return ()  -- TODO
+    endScope = do
+        (_:vs) <- gets vars
+        modify $ \s -> s { vars = vs }
 
     beginFunction typ fname args = do
         fenv <- gets signs
         let fenv' = Map.insert fname (() <$ typ, map (() <$) args) fenv
+        newScope
+        forM_ args (\(Arg (pos,_) typ ident) -> addVar typ ident pos)
         modify $ \s -> s { signs = fenv' }
         modify $ \s -> s { scope = fname }
 
     endFunction = do
         modify $ \s -> s { scope = Ident "" }
+        endScope
 
     setLabel lab = do
         emit $ LLVM.Label lab
         modify $ \s -> s { label = lab }
-
-    beginBasicBlock lab = do
-        setLabel lab
-        us <- gets used
-        modify $ \s -> s { used = Set.empty:us }
-        (vs:tl) <- gets vars
-        modify $ \s -> s { vars = vs:vs:tl }
-
-    endBasicBlock = do
-        (u:us) <- gets used
-        modify $ \s -> s { used = us }
-        (vs:tl) <- gets vars
-        modify $ \s -> s { vars = tl }
-        let prev = head tl
-        lab <- currentLabel
-        return (Map.fromList $ map (\ident -> (ident, (prev Map.! ident, vs Map.! ident))) $ filter (flip Map.member prev) $ Set.toList u, lab)
 
     currentLabel = do
         l <- gets label

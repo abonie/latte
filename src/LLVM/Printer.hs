@@ -47,6 +47,14 @@ printInstr (Ret typ op) = "ret" <+> (printType typ) <+> (printOperand op)
 
 printInstr (VRet) = "ret void"
 
+printInstr (Alloc res typ) = (printIdent res) <=> "alloca" <+> (printType typ)
+
+printInstr (Load res typ ptr) = (printIdent res) <=> "load" <+> (printType typ) ++ ", "
+                                                            ++ (printType $ Ptr typ) <+> (printOperand ptr)
+
+printInstr (Store typ val ptr) = "store" <+> (printType typ) <+> (printOperand val) ++ ", "
+                                     ++ (printType $ Ptr typ) <+> (printOperand ptr)
+
 printInstr (Br op) = "br label" <+> (printOperand op)
 
 printInstr (Cbr cond op1 op2) = "br i1" <+> (printOperand cond) ++ ", label" <+> (printOperand op1)

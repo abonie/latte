@@ -21,6 +21,9 @@ data Arg = Arg Type Ident
 data Instr
     = Ret Type Operand
     | VRet
+    | Alloc Ident Type
+    | Load Ident Type Operand    -- should be: %r = load type, type* %ptr |
+    | Store Type Operand Operand -- should be: store type %t, type* %ptr  | but seems like `type` is repeated
     | Br Operand
     | Cbr Operand Operand Operand
     | Bin Ident Binop Type Operand Operand
