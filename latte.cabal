@@ -17,15 +17,24 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Parsing, Parsing.AbsLatte, Semantics, Semantics.TypeCheck, Errors.LatteError, LLVM, LLVM.AST, LLVM.Printer
+  exposed-modules:     Parsing, Parsing.AbsLatte, Semantics, Semantics.TypeCheck, Errors.LatteError, LLVM, LLVM.AST, LLVM.Printer, Semantics.TypeInfo
   other-modules:       Parsing.LexLatte, Parsing.ParLatte, Parsing.ErrM, Semantics.TypeError, Semantics.SemanticMonad
   build-depends:       base >=4.8 && <4.9, array, containers >=0.5 && <0.6, mtl >=2.2 && <2.3, transformers
   build-tools:         alex, happy
   default-language:    Haskell2010
 
 executable latc_llvm
-  main-is:             Main.hs
-  other-modules:       Semantics.SemanticMonad, Semantics.TypeCheck, Errors.LatteError, Compile, Compile.CodeGen, Parsing, Parsing.AbsLatte, Parsing.LexLatte, Parsing.ParLatte, Compile.Monad, LLVM, LLVM.AST, LLVM.Printer, Parsing.ErrM, Semantics.TypeError
+  main-is:             latc_llvm/Main.hs
+  other-modules:       Semantics.SemanticMonad, Semantics.TypeCheck, Errors.LatteError, Compile, Compile.CodeGen, Parsing, Parsing.AbsLatte, Parsing.LexLatte, Parsing.ParLatte, Compile.Monad, LLVM, LLVM.AST, LLVM.Printer, Parsing.ErrM, Semantics.TypeError, Semantics.TypeInfo
+  other-extensions:    FlexibleInstances, LambdaCase
+  build-depends:       base >=4.8 && <4.9, HUnit >=1.2.5 && <1.7, containers >=0.5 && <0.6, mtl >=2.2 && <2.3 , directory >=1.2 && <1.3, filepath >=1.4 && <1.5, array, transformers, process, latte
+  hs-source-dirs:      src
+  build-tools:         alex, happy
+  default-language:    Haskell2010
+
+executable latc
+  main-is:             latc/Main.hs
+  other-modules:       Semantics.SemanticMonad, Semantics.TypeCheck, Errors.LatteError, Compile, Compile.CodeGen, Parsing, Parsing.AbsLatte, Parsing.LexLatte, Parsing.ParLatte, Compile.Monad, LLVM, LLVM.AST, LLVM.Printer, Parsing.ErrM, Semantics.TypeError, Semantics.TypeInfo
   other-extensions:    FlexibleInstances, LambdaCase
   build-depends:       base >=4.8 && <4.9, HUnit >=1.2.5 && <1.7, containers >=0.5 && <0.6, mtl >=2.2 && <2.3 , directory >=1.2 && <1.3, filepath >=1.4 && <1.5, array, transformers, process, latte
   hs-source-dirs:      src

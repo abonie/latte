@@ -10,7 +10,7 @@ import Control.Monad.Except
 import Control.Monad.State
 import Errors.LatteError
 import Parsing.AbsLatte
-import Semantics.TypeCheck (TypeInfo(..))
+import Semantics.TypeInfo
 
 
 class Monad m => MonadCodeGen m where

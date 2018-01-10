@@ -6,6 +6,7 @@ import Control.Monad (void, unless)
 import Parsing.AbsLatte
 import Semantics.SemanticMonad
 import Semantics.TypeError
+import Semantics.TypeInfo
 import Errors.LatteError
 
 
@@ -39,7 +40,7 @@ checkProg (Program pos defs) = do
     mapM_ addTypeDecl builtins
     mapM_ addTypeDecl defs
     defs' <- mapM checkTopDef defs
-    return $ Program (pos, novars) defs'
+    return $ Program (pos, Nothing) defs'
 
 
 addTypeDecl :: PTopDef -> TCheck ()
@@ -59,8 +60,8 @@ checkTopDef (FnDef pos (FunDef posf retType fname args body@(Block posb stmts)))
     unless (rmpos retType == pVoid || (returns $ BStmt nopos body))
            (raise $ noReturn fname pos)
     leaveFunction
-    return $ FnDef (pos, novars)
-        (FunDef (posf, novars) (mapnovars retType) fname (map mapnovars args) (Block (posb, novars) stmts'))
+    return $ FnDef (pos, Nothing)
+        (FunDef (posf, Nothing) (mapnovars retType) fname (map mapnovars args) (Block (posb, Nothing) stmts'))
 
 checkTopDef clsdef@(ClsDef pos name ext body) = do
     return $ mapnovars clsdef
@@ -71,68 +72,65 @@ checkBlock (Block pos stmts) = do
     enterBlock
     stmts' <- mapM checkStmt stmts
     leaveBlock
-    return $ Block (pos, novars) stmts'
+    return $ Block (pos, Nothing) stmts'
 
 
 checkItem :: PType -> PItem -> TCheck (Item (PosInfo, TypeInfo))
 checkItem typ (NoInit pos ident) = do
     declare typ ident pos
-    return $ NoInit (pos, (Just typ, Map.empty)) ident
+    return $ NoInit (pos, Just typ) ident
 
 checkItem typ (Init pos ident expr) = do
     (exprType, expr') <- checkExpr expr
     matchTypes exprType typ pos
     declare typ ident pos
-    return $ Init (pos, (Just typ, Map.empty)) ident expr'
+    return $ Init (pos, Just typ) ident expr'
 
 
 checkStmt :: PStmt -> TCheck (Stmt (PosInfo, TypeInfo))
-checkStmt (Empty pos) = return $ Empty (pos, novars)
+checkStmt (Empty pos) = return $ Empty (pos, Nothing)
 
 checkStmt (BStmt pos block) = do
     block' <- checkBlock block
-    return $ BStmt (pos, novars) block'
+    return $ BStmt (pos, Nothing) block'
 
 checkStmt (Decl pos typ items) = do
     items' <- mapM (checkItem typ) items
-    return $ Decl (pos, (Just typ, Map.empty)) (settype typ typ) items'
+    return $ Decl (pos, Just typ) (settype typ typ) items'
 
 checkStmt (Ass pos (LhsVar posv ident) expr) = do
     (exprType, expr') <- checkExpr expr
     varType <- typeof ident pos
     void $ matchTypes varType exprType pos
-    let varinfo = (Nothing, Map.singleton ident exprType)
-    return $ Ass (pos, varinfo) (LhsVar (posv, varinfo) ident) expr'
+    return $ Ass (pos, Nothing) (LhsVar (posv, Nothing) ident) expr'
 
 checkStmt (Incr pos (LhsVar posv ident)) = do
     varType <- typeof ident pos
     void $ matchTypes varType pInt pos
-    let varinfo = (Nothing, Map.singleton ident varType)
-    return $ Incr (pos, varinfo) (LhsVar (posv, varinfo) ident)
+    return $ Incr (pos, Nothing) (LhsVar (posv, Nothing) ident)
 
 -- XXX boiler
 checkStmt (Decr pos (LhsVar posv ident)) = do
     varType <- typeof ident pos
     void $ matchTypes varType pInt pos
-    let varinfo = (Nothing, Map.singleton ident varType)
-    return $ Decr (pos, varinfo) (LhsVar (posv, varinfo) ident)
+    return $ Decr (pos, Nothing) (LhsVar (posv, Nothing) ident)
 
 checkStmt (Ret pos expr) = do
     (exprType, expr') <- checkExpr expr
     retType <- returnType
     void $ matchTypes retType exprType pos
-    return $ Ret (pos, novars) expr'
+    return $ Ret (pos, Nothing) expr'
 
 checkStmt (VRet pos) = do
     retType <- returnType
     void $ matchTypes retType pVoid pos
-    return $ VRet (pos, novars)
+    return $ VRet (pos, Nothing)
 
 checkStmt (Cond pos expr stmt) = do
     (exprType, expr') <- checkExpr expr
     matchTypes exprType pBool pos
     stmt' <- checkStmt stmt
-    return $ Cond (pos, novars) expr' stmt'
+    return $ Cond (pos, Nothing) expr' stmt'
 
 -- XXX boiler
 checkStmt (CondElse pos expr ifStmt elseStmt) = do
@@ -140,7 +138,7 @@ checkStmt (CondElse pos expr ifStmt elseStmt) = do
     matchTypes exprType pBool pos
     ifStmt' <- checkStmt ifStmt
     elseStmt' <- checkStmt elseStmt
-    return $ CondElse (pos, novars) expr' ifStmt' elseStmt'
+    return $ CondElse (pos, Nothing) expr' ifStmt' elseStmt'
 
 checkStmt (While pos expr stmt) = do
     (Cond info' expr' stmt') <- checkStmt $ Cond pos expr stmt  -- XXX
@@ -148,14 +146,13 @@ checkStmt (While pos expr stmt) = do
 
 checkStmt (SExp pos expr) = do
     (_, expr') <- checkExpr expr
-    return $ SExp (pos, novars) expr'
+    return $ SExp (pos, Nothing) expr'
 
 
 checkExpr :: PExpr -> TCheck (PType, Expr (PosInfo, TypeInfo))
 checkExpr (EVar pos ident) = do
     varType <- typeof ident pos
-    let varinfo = (Just varType, Map.singleton ident varType)
-    return (varType, EVar (pos, varinfo) ident)
+    return (varType, EVar (pos, Just varType) ident)
 
 checkExpr lit@(ELitTrue pos) = return (Bool pos, settype (Bool pos) lit)
 
@@ -171,50 +168,50 @@ checkExpr (EAdd pos expr1 (Plus poso) expr2) = do
     matchTypes t1 t2 pos
     let t1' = rmpos t1
     unless (elem t1' [pInt, pStr]) (raise $ typeMismatch t1 pInt pos) -- XXX
-    return (t1, EAdd (pos, (typeInfo t1)) expr1' (Plus (poso, novars)) expr2')
+    return (t1, EAdd (pos, Just t1) expr1' (Plus (poso, Nothing)) expr2')
 
 checkExpr (EAdd pos expr1 (Minus poso) expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos
     matchTypes t1 pInt pos
-    return (pInt, EAdd (pos, (typeInfo pInt)) expr1' (Minus (poso, novars)) expr2')
+    return (pInt, EAdd (pos, Just pInt) expr1' (Minus (poso, Nothing)) expr2')
 
 checkExpr (ERel pos expr1 op expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos
-    return (Bool pos, ERel (pos, (typeInfo pBool)) expr1' (mapnovars op) expr2')
+    return (Bool pos, ERel (pos, Just pBool) expr1' (mapnovars op) expr2')
 
 checkExpr (EMul pos expr1 op expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos
     matchTypes t1 pInt pos
-    return (pInt, EMul (pos, (typeInfo pInt)) expr1' (mapnovars op) expr2')
+    return (pInt, EMul (pos, Just pInt) expr1' (mapnovars op) expr2')
 
 checkExpr (Not pos expr) = do
     (typ, expr') <- checkExpr expr
     matchTypes typ pBool pos
-    return (pBool, Not (pos, (typeInfo pBool)) expr')
+    return (pBool, Not (pos, Just pBool) expr')
 
 checkExpr (Neg pos expr) = do
     (typ, expr') <- checkExpr expr
     matchTypes typ pInt pos
-    return (pInt, Neg (pos, (typeInfo pInt)) expr')
+    return (pInt, Neg (pos, Just pInt) expr')
 
 checkExpr (EAnd pos expr1 expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos -- TODO what can be &&-ed?
-    return (t2, EAnd (pos, (typeInfo t2)) expr1' expr2')
+    return (t2, EAnd (pos, Just t2) expr1' expr2')
 
 -- XXX boiler
 checkExpr (EOr pos expr1 expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos -- See above?
-    return (t2, EOr (pos, (typeInfo t2)) expr1' expr2')
+    return (t2, EOr (pos, Just t2) expr1' expr2')
 
 checkExpr (EApp pos fident args) = do
     ftype@(Fun _ ret _) <- typeof fident pos
@@ -222,7 +219,7 @@ checkExpr (EApp pos fident args) = do
     let args' = map snd argsChecked
     let argTypes = map fst argsChecked
     matchTypes ftype (Fun nopos ret argTypes) pos
-    return (ret, EApp (pos, typeInfo ret) fident args')
+    return (ret, EApp (pos, Just ret) fident args')
 
 
 -- utils
@@ -233,19 +230,3 @@ returns (VRet _) = True
 returns (CondElse _ _ ifStmt elseStmt) = returns ifStmt && returns elseStmt
 returns (BStmt _ (Block _ stmts)) = any returns stmts
 returns _ = False
-
-
-type TypeInfo = (Maybe PType, Map.Map Ident PType)
-
-novars :: TypeInfo
-novars = (Nothing, Map.empty)
-
-typeInfo :: PType -> TypeInfo
-typeInfo t = (Just t, Map.empty)
-
--- XXX rename
-settype :: Functor f => PType -> f a -> f (a, TypeInfo)
-settype t = fmap $ flip (,) (Just t, Map.empty)
-
-mapnovars :: Functor f => f a -> f (a, TypeInfo)
-mapnovars = fmap $ flip (,) novars

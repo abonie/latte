@@ -7,7 +7,7 @@ import Control.Monad (void, forM_, forM, liftM, when)
 import Data.Maybe (fromJust)
 import Parsing.AbsLatte
 import Errors.LatteError
-import Semantics.TypeCheck (TypeInfo (..))
+import Semantics.TypeInfo
 import Compile.Monad
 
 
@@ -94,7 +94,7 @@ genStmt (Decr _ (LhsVar _ ident)) = do
 
 genStmt (Ret _ expr) = do
     x <- genExpr expr
-    let t = typeToLLVM $ typeOfExpr expr
+    let t = typeToLLVM $ typeOf expr
     emit $ LLVM.Ret t x
 
 genStmt (VRet _) = do
@@ -157,7 +157,7 @@ genExpr (EString _ s) = do
     emit $ LLVM.Bitcast r (LLVM.Ptr (LLVM.Array len LLVM.I8)) glob (LLVM.Ptr LLVM.I8)
     return (LLVM.Reg r)
 
-genExpr (EAdd (_, (Just typ, _)) expr1 op expr2) = case typ of
+genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
     Int _ -> genBinop (addOp2LLVM op) expr1 expr2
     Str _ -> do
         -- TODO check if operator is Add ?
@@ -245,9 +245,9 @@ genExpr (EOr _ expr1 expr2) = do
     emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 1) l1 x2 l2
     return (LLVM.Reg r3)
 
-genExpr (EApp (_, (Just typ, _)) (Ident fname) args) = do
+genExpr (EApp (_, Just typ) (Ident fname) args) = do
     argValues <- mapM genExpr args
-    let argTypes = map (typeToLLVM . typeOfExpr) args
+    let argTypes = map (typeToLLVM . typeOf) args
     let cargs = map (uncurry LLVM.Carg) $ zip argTypes argValues
     let lltype = typeToLLVM typ
     let llid = LLVM.Ident ('@':fname)
@@ -287,24 +287,3 @@ mulOp2LLVM :: MulOp a -> LLVM.Binop
 mulOp2LLVM (Times _) = LLVM.Mul
 mulOp2LLVM (Div _) = LLVM.Div
 mulOp2LLVM (Mod _) = LLVM.Rem
-
-typeOfExpr :: Expr (PosInfo, TypeInfo) -> PType
-typeOfExpr (EVar (_, (Just t, _)) _) = t
-typeOfExpr (EMem (_, (Just t, _)) _ _) = t
-typeOfExpr (EInd (_, (Just t, _)) _ _) = t
-typeOfExpr (ELitInt _ _) = pInt
-typeOfExpr (ELitTrue _) = pBool
-typeOfExpr (ELitFalse _) = pBool
-typeOfExpr (ENew (_, (Just t, _)) _) = t
-typeOfExpr (ENull (_, (Just t, _)) _) = t
-typeOfExpr (EArr (_, (Just t, _)) _ _) = t
-typeOfExpr (EApp (_, (Just t, _)) _ _) = t
-typeOfExpr (EMet (_, (Just t, _)) _ _ _) = t
-typeOfExpr (EString _ _) = pStr
-typeOfExpr (Neg _ _) = pInt
-typeOfExpr (Not _ _ ) = pBool
-typeOfExpr (EMul _ _ _ _) = pInt
-typeOfExpr (EAdd (_, (Just t, _)) _ _ _) = t
-typeOfExpr (ERel _ _ _ _) = pBool
-typeOfExpr (EAnd _ _ _ ) = pBool
-typeOfExpr (EOr _ _ _) = pBool
