@@ -102,18 +102,41 @@ checkStmt (Ass pos (LhsVar posv ident) expr) = do
     (exprType, expr') <- checkExpr expr
     varType <- typeof ident pos
     void $ matchTypes varType exprType pos
-    return $ Ass (pos, Nothing) (LhsVar (posv, Nothing) ident) expr'
+    return $ Ass (pos, Nothing) (LhsVar (posv, Just varType) ident) expr'
+
+checkStmt (Ass pos (LhsInd posi ident indExpr) expr) = do
+    (indType, indExpr') <- checkExpr indExpr
+    matchTypes indType pInt posi
+    -- TODO XXX check bounds ?
+    (exprType, expr') <- checkExpr expr
+    varType <- typeof ident pos
+    matchTypes varType (Arr nopos exprType) pos
+    return $ Ass (pos, Nothing) (LhsInd (posi, Just varType) ident indExpr') expr'
 
 checkStmt (Incr pos (LhsVar posv ident)) = do
     varType <- typeof ident pos
     void $ matchTypes varType pInt pos
-    return $ Incr (pos, Nothing) (LhsVar (posv, Nothing) ident)
+    return $ Incr (pos, Nothing) (LhsVar (posv, Just varType) ident)
+
+checkStmt (Incr pos (LhsInd posi ident expr)) = do
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType pInt posi
+    varType <- typeof ident pos
+    matchTypes varType (Arr nopos pInt) pos
+    return $ Incr (pos, Nothing) (LhsInd (posi, Just varType) ident expr')
 
 -- XXX boiler
 checkStmt (Decr pos (LhsVar posv ident)) = do
     varType <- typeof ident pos
     void $ matchTypes varType pInt pos
-    return $ Decr (pos, Nothing) (LhsVar (posv, Nothing) ident)
+    return $ Decr (pos, Nothing) (LhsVar (posv, Just varType) ident)
+
+checkStmt (Decr pos (LhsInd posi ident expr)) = do
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType pInt posi
+    varType <- typeof ident pos
+    matchTypes varType (Arr nopos pInt) pos
+    return $ Decr (pos, Nothing) (LhsInd (posi, Just varType) ident expr')
 
 checkStmt (Ret pos expr) = do
     (exprType, expr') <- checkExpr expr
@@ -154,6 +177,15 @@ checkExpr (EVar pos ident) = do
     varType <- typeof ident pos
     return (varType, EVar (pos, Just varType) ident)
 
+checkExpr (EInd pos ident expr) = do
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType pInt pos
+    varType <- typeof ident pos
+    -- TODO XXX Check if type matches (Arr _ something) !!!
+    case varType of
+        Arr _ typ -> return (typ, EInd (pos, Just typ) ident expr')
+        _ -> return (varType, EInd (pos, Nothing) ident expr') -- XXX should throw error !!!
+
 checkExpr lit@(ELitTrue pos) = return (Bool pos, settype (Bool pos) lit)
 
 checkExpr lit@(ELitFalse pos) = return (Bool pos, settype (Bool pos) lit)
@@ -181,7 +213,7 @@ checkExpr (ERel pos expr1 op expr2) = do
     (t1, expr1') <- checkExpr expr1
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos
-    return (Bool pos, ERel (pos, Just pBool) expr1' (mapnovars op) expr2')
+    return (pBool, ERel (pos, Just pBool) expr1' (mapnovars op) expr2')
 
 checkExpr (EMul pos expr1 op expr2) = do
     (t1, expr1') <- checkExpr expr1
@@ -212,6 +244,11 @@ checkExpr (EOr pos expr1 expr2) = do
     (t2, expr2') <- checkExpr expr2
     matchTypes t1 t2 pos -- See above?
     return (t2, EOr (pos, Just t2) expr1' expr2')
+
+checkExpr (EArr pos typ expr) = do
+    (typExpr, expr') <- checkExpr expr
+    matchTypes typExpr typ pos
+    return (Arr nopos typExpr, EArr (pos, Just typExpr) (mapnovars typ) expr')
 
 checkExpr (EApp pos fident args) = do
     ftype@(Fun _ ret _) <- typeof fident pos
