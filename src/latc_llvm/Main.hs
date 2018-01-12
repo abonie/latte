@@ -31,7 +31,7 @@ buildLLVM src path = do
     let outBc = replaceExtension outPath "bc"
     execPath <- getExecutablePath
     let execDir = fst $ splitFileName execPath
-    let runtimeBc = combine execDir "lib/runtime.bc"
+    let runtimeBc = combine execDir $ combine "lib" "runtime.bc"
     writeFile outPath src
     callCommand $ "llvm-as " ++ outPath ++ " -o " ++ tmpBc
     callCommand $ "llvm-link " ++ tmpBc ++ " " ++ runtimeBc ++ " -o " ++ outBc

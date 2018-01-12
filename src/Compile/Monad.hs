@@ -11,6 +11,7 @@ import Control.Monad.State
 import Errors.LatteError
 import Parsing.AbsLatte
 import Semantics.TypeInfo
+import Debug.Trace (trace) -- XXX
 
 
 class Monad m => MonadCodeGen m where
@@ -99,7 +100,7 @@ instance MonadCodeGen LLGen where
         n <- gets count
         modify $ \s -> s { count = n + 1 }
         let globname = LLVM.Ident $ "@str" ++ (show n)
-        let atype = LLVM.Array ((length str) - 1) LLVM.I8
+        let atype = LLVM.Array (max 1 $ (length str) - 1) LLVM.I8
         addDecl $ LLVM.ConstDef globname atype (LLVM.LitStr str)
         return globname
 
@@ -139,16 +140,36 @@ instance MonadCodeGen LLGen where
         modify $ \s -> s { vars = vs }
 
     beginFunction typ fname args = do
+        modify $ \s -> s { label = LLVM.Ident "%0" }
         fenv <- gets signs
         let fenv' = Map.insert fname (() <$ typ, map (() <$) args) fenv
         newScope
-        forM_ args (\(Arg (pos,_) typ ident) -> addVar typ ident pos)
-        modify $ \s -> s { signs = fenv' }
         modify $ \s -> s { scope = fname }
+        forM_ args (\(Arg (pos,_) typ ident@(Ident name)) -> do
+            addVar typ ident pos
+            setVar ident (LLVM.Reg $ LLVM.Ident $ '%':name) )
+        modify $ \s -> s { signs = fenv' }
 
     endFunction = do
-        modify $ \s -> s { scope = Ident "" }
+        fenv <- gets signs
+        fident <- gets scope
+        cd <- gets code
+        let Just (retType, _) = Map.lookup fident fenv
+        when (retType == Void ()) $ do
+            -- TODO XXX
+            case Map.lookup fident cd of
+                Nothing -> emit LLVM.VRet
+                Just [] -> emit LLVM.VRet
+                Just (i:is) | i /= LLVM.VRet -> emit LLVM.VRet
+                _ -> return ()
+        cd <- gets code
+        let cleaned = rmlabels $ cd Map.! fident  -- TODO XXX
+        modify $ \s -> s { scope = Ident "", code = Map.insert fident cleaned cd }
         endScope
+      where
+        -- TODO XXX
+        rmlabels ((LLVM.Label _):xs) = rmlabels xs
+        rmlabels other = other
 
     setLabel lab = do
         emit $ LLVM.Label lab
@@ -165,7 +186,7 @@ instance MonadCodeGen LLGen where
 envToModule :: Env -> LLVM.Module
 envToModule env = let
     mkFunDef (ident@(Ident name), instrs) = let
-            (ret, args) = (signs env) Map.! ident
+            Just (ret, args) = Map.lookup ident (signs env)
             args' = map argToLLVM args in
         LLVM.FunDef (typeToLLVM ret) (LLVM.Ident ('@':name)) args' (reverse instrs) in
     LLVM.Module $ (decls env) ++ map mkFunDef (Map.assocs $ code env)
@@ -178,4 +199,4 @@ typeToLLVM (Void _) = LLVM.Void
 typeToLLVM (Str _) = LLVM.Ptr LLVM.I8
 
 argToLLVM :: Arg a -> LLVM.Arg
-argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident name)
+argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident $ '%':name)

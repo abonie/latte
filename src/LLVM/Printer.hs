@@ -111,13 +111,14 @@ printBinop :: Binop -> String
 printBinop Add = "add"
 printBinop Sub = "sub"
 printBinop Mul = "mul"
-printBinop Div = "idiv"
+printBinop Div = "sdiv"
 printBinop Rem = "srem"
 
 
 printOperand :: Operand -> String
 printOperand (Reg ident) = printIdent ident
 printOperand (LitInt n) = show n
+printOperand (LitStr "") = "c\"\\00\""
 printOperand (LitStr s) = 'c':((init s) ++ "\\00\"")
 printOperand Undef = "undef"
 

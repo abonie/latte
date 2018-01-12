@@ -260,8 +260,9 @@ checkExpr (EApp pos fident args) = do
 
 
 -- utils
+-- TODO move to separate file
 
-returns :: PStmt -> Bool
+returns :: Stmt a -> Bool
 returns (Ret _ _) = True
 returns (VRet _) = True
 returns (CondElse _ _ ifStmt elseStmt) = returns ifStmt && returns elseStmt

@@ -3,11 +3,11 @@
 module Compile.CodeGen where
 import qualified LLVM
 import qualified Data.Map as Map
-import Control.Monad (void, forM_, forM, liftM, when)
-import Data.Maybe (fromJust)
+import Control.Monad (void, forM_, when, unless)
 import Parsing.AbsLatte
 import Errors.LatteError
 import Semantics.TypeInfo
+import Semantics.TypeCheck (returns) -- TODO move to different module and maybe rename
 import Compile.Monad
 
 
@@ -68,13 +68,19 @@ genStmt (Empty _) = return ()
 
 genStmt (BStmt _ block) = genBlock block
 
-genStmt (Decl _ typ items) = mapM_
-    (\case {
-        NoInit info ident -> addVar typ ident (fst info);
-        Init info ident expr -> do {
-            addVar typ ident (fst info);
-            genStmt $ Ass info (LhsVar info ident) expr } } ) -- XXX
-    items
+genStmt (Decl _ typ items) = forM_ items (\case
+        NoInit info ident -> do
+            addVar typ ident (fst info)
+            case typ of
+                -- TODO
+                Str _ -> genStmt $ Ass info (LhsVar info ident) (EString (nopos, Nothing) "")
+                Int _ -> genStmt $ Ass info (LhsVar info ident) (ELitInt (nopos, Nothing) 0)
+                Bool _ -> genStmt $ Ass info (LhsVar info ident) (ELitFalse (nopos, Nothing))
+                _ -> return ()
+        Init info ident expr -> do
+            x <- genExpr expr
+            addVar typ ident (fst info)
+            setVar ident x )
 
 genStmt (Ass _ (LhsVar _ ident) expr) = do
     x <- genExpr expr
@@ -100,6 +106,7 @@ genStmt (Ret _ expr) = do
 genStmt (VRet _) = do
     emit $ LLVM.VRet
 
+-- TODO create explicit representation for basic blocks
 genStmt (Cond _ expr stmt) = do
     x <- genExpr expr
     ltrue <- newLabel
@@ -107,7 +114,7 @@ genStmt (Cond _ expr stmt) = do
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
     setLabel ltrue
     genStmt stmt
-    emit $ LLVM.Br (LLVM.Reg lfalse)
+    unless (returns stmt) (emit $ LLVM.Br (LLVM.Reg lfalse))
     setLabel lfalse
 
 genStmt (CondElse _ expr tStmt fStmt) = do
@@ -118,10 +125,10 @@ genStmt (CondElse _ expr tStmt fStmt) = do
     emit $ LLVM.Cbr x (LLVM.Reg ltrue) (LLVM.Reg lfalse)
     setLabel ltrue
     genStmt tStmt
-    emit $ LLVM.Br (LLVM.Reg lafter)
+    unless (returns tStmt) (emit $ LLVM.Br (LLVM.Reg lafter))
     setLabel lfalse
     genStmt fStmt
-    emit $ LLVM.Br (LLVM.Reg lafter)
+    unless (returns fStmt) (emit $ LLVM.Br (LLVM.Reg lafter))
     setLabel lafter
 
 genStmt (While _ expr stmt) = do
@@ -153,20 +160,22 @@ genExpr (ELitInt _ n) = return $ LLVM.LitInt n
 genExpr (EString _ s) = do
     r <- newReg
     glob <- addStr s r
-    let len = (length s) - 1
+    let len = max 1 $ (length s) - 1
     emit $ LLVM.Bitcast r (LLVM.Ptr (LLVM.Array len LLVM.I8)) glob (LLVM.Ptr LLVM.I8)
     return (LLVM.Reg r)
 
 genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
     Int _ -> genBinop (addOp2LLVM op) expr1 expr2
     Str _ -> do
-        -- TODO check if operator is Add ?
+        -- TODO check if operator is Add ? type checking ensures that
         x1 <- genExpr expr1
         x2 <- genExpr expr2
         l1Reg <- callStrlen x1
         l2Reg <- callStrlen x2
         len <- newReg
-        emit $ LLVM.Bin len LLVM.Add LLVM.I64 l1Reg l2Reg
+        sum <- newReg
+        emit $ LLVM.Bin sum LLVM.Add LLVM.I64 l1Reg l2Reg
+        emit $ LLVM.Bin len LLVM.Add LLVM.I64 (LLVM.Reg sum) (LLVM.LitInt 1)
         res <- newReg
         emit $ LLVM.Call res (LLVM.Ptr LLVM.I8) (LLVM.Ident "@malloc") [LLVM.Carg LLVM.I64 (LLVM.Reg len)]
         let args1 = [
@@ -180,7 +189,7 @@ genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
         ptr <- newReg
         emit $ LLVM.GEP ptr LLVM.I8 (LLVM.Reg res) l1Reg
         l2plus1 <- newReg
-        emit $ LLVM.Bin l2plus1 LLVM.Add LLVM.I64 l1Reg (LLVM.LitInt 1)
+        emit $ LLVM.Bin l2plus1 LLVM.Add LLVM.I64 l2Reg (LLVM.LitInt 1)
         let args2 = [
                 LLVM.Carg (LLVM.Ptr LLVM.I8) (LLVM.Reg ptr),
                 LLVM.Carg (LLVM.Ptr LLVM.I8) x2,
@@ -198,7 +207,8 @@ genExpr (ERel _ expr1 op expr2) = do
     x1 <- genExpr expr1
     x2 <- genExpr expr2
     -- XXX
-    emit $ LLVM.Cmp r (cmpOp2LLVM op) LLVM.I32 x1 x2
+    let typ = typeToLLVM $ typeOf expr1
+    emit $ LLVM.Cmp r (cmpOp2LLVM op) typ x1 x2
     return (LLVM.Reg r)
 
 genExpr (Not _ expr) = do
@@ -214,24 +224,25 @@ genExpr (Neg _ expr) = do
     return (LLVM.Reg r)
 
 genExpr (EAnd _ expr1 expr2) = do
-    l1 <- currentLabel
     x1 <- genExpr expr1
-    r1 <- newReg
+    l1 <- currentLabel
     l2 <- newLabel
+    r1 <- newReg
     l3 <- newLabel
     emit $ LLVM.Cmp r1 LLVM.Eq LLVM.I1 x1 (LLVM.LitInt 0)
     emit $ LLVM.Cbr (LLVM.Reg r1) (LLVM.Reg l3) (LLVM.Reg l2)
     setLabel l2
     x2 <- genExpr expr2
+    l2' <- currentLabel
     emit $ LLVM.Br (LLVM.Reg l3)
     setLabel l3
     r3 <- newReg
-    emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 0) l1 x2 l2
+    emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 0) l1 x2 l2'
     return (LLVM.Reg r3)
 
 genExpr (EOr _ expr1 expr2) = do
-    l1 <- currentLabel
     x1 <- genExpr expr1
+    l1 <- currentLabel
     r1 <- newReg
     l2 <- newLabel
     l3 <- newLabel
@@ -239,10 +250,11 @@ genExpr (EOr _ expr1 expr2) = do
     emit $ LLVM.Cbr (LLVM.Reg r1) (LLVM.Reg l3) (LLVM.Reg l2)
     setLabel l2
     x2 <- genExpr expr2
+    l2' <- currentLabel
     emit $ LLVM.Br (LLVM.Reg l3)
     setLabel l3
     r3 <- newReg
-    emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 1) l1 x2 l2
+    emit $ LLVM.Phi r3 LLVM.I1 (LLVM.LitInt 1) l1 x2 l2'
     return (LLVM.Reg r3)
 
 genExpr (EApp (_, Just typ) (Ident fname) args) = do
