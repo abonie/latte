@@ -19,17 +19,15 @@ printTopDef (FunDec typ ident args) = "declare" <+> (printType typ)
                                                 <+> (printArgs args)
 
 printTopDef (ConstDef name typ init) = (printIdent name) <=> "constant" <+> (printType typ)
-                                                                        <+> (printOperand init)
+                                                                        <+> (printConst init)
 
 
 printType :: Type -> String
-printType I64 = "i64"
-printType I32 = "i32"
-printType I8 = "i8"
-printType I1 = "i1"
+printType (I n) = 'i':(show n)
 printType Void = "void"
 printType (Array size typ) = "[" ++ (show size) <+> "x" <+> printType typ ++ "]"
 printType (Ptr typ) = (printType typ) ++ "*"
+printType TLabel = "label"
 
 
 printIdent :: Ident -> String
@@ -87,7 +85,7 @@ printInstr (Bitcast res typ1 const typ2) = (printIdent res) <=> "bitcast" <+> (p
 printInstr (GEP res typ ptr idx) = (printIdent res) <=> "getelementptr" <+> (printType typ) ++ ", "
                                                                         ++ (printType $ Ptr typ)
                                                                         <+> (printOperand ptr) ++ ", "
-                                                                        ++ (printType I64)
+                                                                        ++ (printType i64)
                                                                         <+> (printOperand idx)
 
 
@@ -116,11 +114,14 @@ printBinop Rem = "srem"
 
 
 printOperand :: Operand -> String
-printOperand (Reg ident) = printIdent ident
-printOperand (LitInt n) = show n
-printOperand (LitStr "") = "c\"\\00\""
-printOperand (LitStr s) = 'c':((init s) ++ "\\00\"")
-printOperand Undef = "undef"
+printOperand (Reg _ ident) = printIdent ident
+printOperand (ConstOperand c) = printConst c
+
+printConst :: Constant -> String
+printConst (Int _ n) = show n
+printConst (Str "") = "c\"\\00\""
+printConst (Str s) = 'c':((init s) ++ "\\00\"")
+printConst (Undef _) = "undef"
 
 (<+>) :: String -> String -> String
 a <+> b = a ++ " " ++ b

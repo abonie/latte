@@ -9,7 +9,11 @@ module LLVM (
     Binop(..),
     Cmpop(..),
     Operand(..),
-    Type(..)
+    Constant(..),
+    Type(..),
+    i64, i32, i8, i1,
+    litI64, litI32, litI8, litI1,
+    operandType
 )
 where
 import LLVM.AST

@@ -12,7 +12,7 @@ data Module = Module [TopDef]
 data TopDef
     = FunDef Type Ident [Arg] [Instr]
     | FunDec Type Ident [Arg]
-    | ConstDef Ident Type Operand
+    | ConstDef Ident Type Constant
   deriving (Eq, Ord, Show, Read)
 
 data Arg = Arg Type Ident
@@ -45,16 +45,37 @@ data Binop = Add | Sub | Mul | Div | Rem
 data Cmpop = Eq | Ne | Gt | Ge | Lt | Le
   deriving (Eq, Ord, Show, Read)
 
-data Operand = Reg Ident | LitInt Integer | LitStr String | Undef
+data Operand = Reg Type Ident | ConstOperand Constant
+  deriving (Eq, Ord, Show, Read)
+
+data Constant = Int Int Integer | Str String | Undef Type
   deriving (Eq, Ord, Show, Read)
 
 data Type
-    = I64
-    | I32
-    | I8
-    | I1
+    = I Int
     | Void
     | Array Int Type
     | Ptr Type
+    | TLabel  -- TODO ugly name
   deriving (Eq, Ord, Show, Read)
 
+i1  = I 1
+i8  = I 8
+i32 = I 32
+i64 = I 64
+
+intLit width val = ConstOperand $ Int width val
+litI64 = intLit 64
+litI32 = intLit 32
+litI8  = intLit 8
+litI1  = intLit 1
+
+-- TODO class
+operandType :: Operand -> Type
+operandType (Reg t _) = t
+operandType (ConstOperand c) = constType c
+
+constType :: Constant -> Type
+constType (Int i _) = I i
+constType (Undef t) = t
+constType (Str s) = Array (length s) i8

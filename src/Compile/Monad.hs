@@ -11,7 +11,6 @@ import Control.Monad.State
 import Errors.LatteError
 import Parsing.AbsLatte
 import Semantics.TypeInfo
-import Debug.Trace (trace) -- XXX
 
 
 class Monad m => MonadCodeGen m where
@@ -35,6 +34,13 @@ class Monad m => MonadCodeGen m where
 
 type LLGen = ExceptT (LatteError PType) (State Env)
 
+
+--data BlockState
+--    = BlockState {
+--      label :: LLVM.Ident
+--    , instrs :: [LLVM.Instr]
+--    , term :: Maybe LLVM.Instr
+--    }
 
 data Env
     = Env {
@@ -100,8 +106,8 @@ instance MonadCodeGen LLGen where
         n <- gets count
         modify $ \s -> s { count = n + 1 }
         let globname = LLVM.Ident $ "@str" ++ (show n)
-        let atype = LLVM.Array (max 1 $ (length str) - 1) LLVM.I8
-        addDecl $ LLVM.ConstDef globname atype (LLVM.LitStr str)
+        let atype = LLVM.Array (max 1 $ (length str) - 1) LLVM.i8
+        addDecl $ LLVM.ConstDef globname atype (LLVM.Str str)
         return globname
 
     addVar typ ident _ = do  -- TODO blank: _
@@ -109,7 +115,7 @@ instance MonadCodeGen LLGen where
         let typ' = (typeToLLVM typ)
         emit $ LLVM.Alloc r typ'
         (vs:tl) <- gets vars
-        modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg r), typ') vs):tl }
+        modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg typ' r), typ') vs):tl }
 
     setVar ident val = do
         vs <- gets vars
@@ -119,17 +125,17 @@ instance MonadCodeGen LLGen where
 
     callStrlen reg = do
         res <- newReg
-        emit $ LLVM.Call res LLVM.I64 (LLVM.Ident "@strlen") [LLVM.Carg (LLVM.Ptr LLVM.I8) reg]
-        return $ LLVM.Reg res
+        emit $ LLVM.Call res LLVM.i64 (LLVM.Ident "@strlen") [LLVM.Carg (LLVM.Ptr LLVM.i8) reg]
+        return $ LLVM.Reg LLVM.i64 res
 
     getVar ident = do
         vs <- gets vars
         case lookupNested ident vs of
             Nothing -> throwError CompileError -- TODO
-            Just (reg@(LLVM.Reg ident), typ) -> do
+            Just (reg@(LLVM.Reg _ ident), typ) -> do
                 res <- newReg
                 emit $ LLVM.Load res typ reg
-                return $ LLVM.Reg res
+                return $ LLVM.Reg typ res
 
     newScope = do
         vs <- gets vars
@@ -147,7 +153,7 @@ instance MonadCodeGen LLGen where
         modify $ \s -> s { scope = fname }
         forM_ args (\(Arg (pos,_) typ ident@(Ident name)) -> do
             addVar typ ident pos
-            setVar ident (LLVM.Reg $ LLVM.Ident $ '%':name) )
+            setVar ident (LLVM.Reg (typeToLLVM typ) $ LLVM.Ident $ '%':name) )
         modify $ \s -> s { signs = fenv' }
 
     endFunction = do
@@ -193,10 +199,10 @@ envToModule env = let
 
 
 typeToLLVM :: Type a -> LLVM.Type
-typeToLLVM (Int _) = LLVM.I32
-typeToLLVM (Bool _) = LLVM.I1
+typeToLLVM (Int _) = LLVM.i32
+typeToLLVM (Bool _) = LLVM.i1
 typeToLLVM (Void _) = LLVM.Void
-typeToLLVM (Str _) = LLVM.Ptr LLVM.I8
+typeToLLVM (Str _) = LLVM.Ptr LLVM.i8
 
 argToLLVM :: Arg a -> LLVM.Arg
 argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident $ '%':name)
