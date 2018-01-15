@@ -11,7 +11,7 @@ data Module = Module [TopDef]
 
 data TopDef
     = FunDef Type Ident [Arg] [Instr]
-    | FunDec Type Ident [Arg]
+    | FunDec Type Ident [Type]
     | ConstDef Ident Type Constant
   deriving (Eq, Ord, Show, Read)
 

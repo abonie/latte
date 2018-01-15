@@ -18,13 +18,13 @@ spec = do
             moreorless (printModule test2) `shouldBe` moreorless test2'
 
     where
-        test1 = Module [FunDec Void (Ident "@printInt") [Arg i32 (Ident "%x")]]
-        test1' = "declare void @printInt (i32 %x)"
-        test2 = Module [FunDec Void (Ident "@printInt") [Arg i32 (Ident "%x")],
-                        FunDec i32 (Ident "@foo") [Arg i1 (Ident "%y"), Arg i1 (Ident "%z")],
+        test1 = Module [FunDec Void (Ident "@printInt") [i32]]
+        test1' = "declare void @printInt (i32)"
+        test2 = Module [FunDec Void (Ident "@printInt") [i32],
+                        FunDec i32 (Ident "@foo") [i1, i1],
                         FunDec i1 (Ident "@bar") []]
-        test2' = "declare void @printInt (i32 %x)\n\
-                 \declare i32 @foo (i1 %y, i1 %z)\n\
+        test2' = "declare void @printInt (i32)\n\
+                 \declare i32 @foo (i1, i1)\n\
                  \declare i1 @bar ()"
 
 

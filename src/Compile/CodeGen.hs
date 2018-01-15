@@ -19,10 +19,10 @@ globDecls :: [LLVM.TopDef]
 globDecls = [
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@printInt")
-                [LLVM.Arg LLVM.i32 (LLVM.Ident "%x")],
+                [LLVM.i32],
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@printString")
-                [LLVM.Arg (LLVM.Ptr LLVM.i8) (LLVM.Ident "%s")],
+                [LLVM.Ptr LLVM.i8],
     LLVM.FunDec LLVM.i32
                 (LLVM.Ident "@readInt")
                 [],
@@ -31,17 +31,13 @@ globDecls = [
                 [],
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
-                [LLVM.Arg (LLVM.Ptr LLVM.i8) (LLVM.Ident "%dst"),
-                 LLVM.Arg (LLVM.Ptr LLVM.i8) (LLVM.Ident "%src"),
-                 LLVM.Arg LLVM.i64 (LLVM.Ident "%len"),
-                 LLVM.Arg LLVM.i32 (LLVM.Ident "%algn"),
-                 LLVM.Arg LLVM.i1 (LLVM.Ident "%volatile")],
+                [LLVM.Ptr LLVM.i8, LLVM.Ptr LLVM.i8, LLVM.i64, LLVM.i32, LLVM.i1],
     LLVM.FunDec LLVM.i64
                 (LLVM.Ident "@strlen")
-                [LLVM.Arg (LLVM.Ptr LLVM.i8) (LLVM.Ident "%str")],
+                [LLVM.Ptr LLVM.i8],
     LLVM.FunDec (LLVM.Ptr LLVM.i8)
                 (LLVM.Ident "@malloc")
-                [LLVM.Arg LLVM.i64 (LLVM.Ident "%n")]
+                [LLVM.i64]
     ]
     
 genProg :: Program (PosInfo, TypeInfo) -> LLGen ()
@@ -172,32 +168,18 @@ genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
         -- TODO check if operator is Add ? type checking ensures that
         x1 <- genExpr expr1
         x2 <- genExpr expr2
-        l1Reg <- callStrlen x1
-        l2Reg <- callStrlen x2
-        sum <- add l1Reg l2Reg
+        l1 <- callStrlen x1
+        l2 <- callStrlen x2
+        sum <- add l1 l2
         len <- add sum $ LLVM.litI64 1
-        res <- newReg
-        emit $ LLVM.Call res (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [LLVM.Carg LLVM.i64 len]
-        let args1 = [
-                LLVM.Carg (LLVM.Ptr LLVM.i8) (LLVM.Reg (LLVM.Ptr LLVM.i8) res),
-                LLVM.Carg (LLVM.Ptr LLVM.i8) x1,
-                LLVM.Carg LLVM.i64 l1Reg,
-                LLVM.Carg LLVM.i32 (LLVM.litI32 0),
-                LLVM.Carg LLVM.i1 (LLVM.litI1 1)
-                ]
-        emit $ LLVM.VCall LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64") args1
-        ptr <- newReg
-        emit $ LLVM.GEP ptr LLVM.i8 (LLVM.Reg (LLVM.Ptr LLVM.i8) res) l1Reg
-        l2plus1 <- add l2Reg $ LLVM.litI64 1
-        let args2 = [
-                LLVM.Carg (LLVM.Ptr LLVM.i8) (LLVM.Reg (LLVM.Ptr LLVM.i8) ptr),
-                LLVM.Carg (LLVM.Ptr LLVM.i8) x2,
-                LLVM.Carg LLVM.i64 l2plus1,
-                LLVM.Carg LLVM.i32 (LLVM.litI32 0),
-                LLVM.Carg LLVM.i1 (LLVM.litI1 1)
-                    ]
-        emit $ LLVM.VCall LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64") args2
-        return $ LLVM.Reg (LLVM.Ptr LLVM.i8) res
+        Just res <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [len]
+        _ <- call LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
+                            [res, x1, l1, LLVM.litI32 0, LLVM.litI1 1]
+        ptr <- gep res l1
+        l2plus1 <- add l2 $ LLVM.litI64 1
+        _ <- call LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
+                            [ptr, x2, l2plus1, LLVM.litI32 0, LLVM.litI1 1]
+        return res
 
 genExpr (EMul _ expr1 op expr2) = do
     x1 <- genExpr expr1
@@ -212,20 +194,17 @@ genExpr (ERel _ expr1 op expr2) = do
 genExpr (Not _ expr) = do
     x <- genExpr expr
     r <- newReg
-    emit $ LLVM.Bin r LLVM.Sub LLVM.i1 (LLVM.litI1 1) x
-    return (LLVM.Reg LLVM.i1 r)
+    sub (LLVM.litI1 1) x
 
 genExpr (Neg _ expr) = do
     x <- genExpr expr
     r <- newReg
-    emit $ LLVM.Bin r LLVM.Mul LLVM.i32 x $ LLVM.litI32 (-1)
-    return (LLVM.Reg LLVM.i32 r)
+    mul x $ LLVM.litI32 (-1)
 
 genExpr (EAnd _ expr1 expr2) = do
     x1 <- genExpr expr1
     l1 <- currentLabel
     l2 <- newLabel
-    r1 <- newReg
     l3 <- newLabel
     r1 <- cmp LLVM.Eq x1 $ LLVM.litI1 0
     cbr r1 l3 l2
@@ -256,18 +235,12 @@ genExpr (EOr _ expr1 expr2) = do
 
 genExpr (EApp (_, Just typ) (Ident fname) args) = do
     argValues <- mapM genExpr args
-    let argTypes = map (typeToLLVM . typeOf) args
-    let cargs = map (uncurry LLVM.Carg) $ zip argTypes argValues
     let lltype = typeToLLVM typ
     let llid = LLVM.Ident ('@':fname)
-    case typ of
-        Void _ -> do
-            emit $ LLVM.VCall lltype llid cargs
-            return (LLVM.ConstOperand $ LLVM.Undef LLVM.Void)
-        _ -> do
-            r <- newReg
-            emit $ LLVM.Call r lltype llid cargs
-            return (LLVM.Reg lltype r)
+    maybeRet <- call lltype llid argValues
+    case maybeRet of
+        Nothing -> return $ LLVM.ConstOperand $ LLVM.Undef LLVM.Void
+        Just ret -> return ret
 
 
 genBinop :: LLVM.Binop -> LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
@@ -278,15 +251,17 @@ genBinop op x y = do
     return $ LLVM.Reg typ r
 
 add :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
-add x y = genBinop LLVM.Add x y
+add = genBinop LLVM.Add
 
 sub :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
-sub x y = genBinop LLVM.Sub x y
+sub = genBinop LLVM.Sub
+
+mul :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
+mul = genBinop LLVM.Mul
 
 
 cbr :: LLVM.Operand -> LLVM.Ident -> LLVM.Ident -> LLGen ()
 cbr cond ltr lfs = emit $ LLVM.Cbr cond (LLVM.Reg LLVM.TLabel ltr) (LLVM.Reg LLVM.TLabel lfs)
-
 
 br :: LLVM.Ident -> LLGen ()
 br lab = emit $ LLVM.Br (LLVM.Reg LLVM.TLabel lab)
@@ -298,6 +273,27 @@ cmp op x y = do
     r <- newReg
     emit $ LLVM.Cmp r op t x y
     return $ LLVM.Reg LLVM.i1 r
+
+
+call :: LLVM.Type -> LLVM.Ident -> [LLVM.Operand] -> LLGen (Maybe LLVM.Operand)
+call typ fname args =
+    let cargs = map (\arg -> LLVM.Carg (LLVM.operandType arg) arg) args in
+    if typ == LLVM.Void then do
+        emit $ LLVM.VCall typ fname cargs
+        return Nothing
+    else do
+        r <- newReg
+        emit $ LLVM.Call r typ fname cargs
+        return $ Just $ LLVM.Reg typ r
+
+
+gep :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
+gep ptr idx = do
+    res <- newReg
+    let LLVM.Ptr typ = LLVM.operandType ptr
+    emit $ LLVM.GEP res typ ptr idx 
+    return $ LLVM.Reg (LLVM.Ptr typ) res
+
 
 -- TODO XXX
 cmpOp2LLVM :: RelOp a -> LLVM.Cmpop

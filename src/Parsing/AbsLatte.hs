@@ -217,3 +217,4 @@ pStr  = Str nopos
 pBool = Bool nopos
 pVoid = Void nopos
 pFun = Fun nopos
+pArr = Arr nopos

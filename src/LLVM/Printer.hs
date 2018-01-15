@@ -1,5 +1,6 @@
 module LLVM.Printer where
 import LLVM.AST
+import Data.List (intercalate)
 
 
 printTree = printModule
@@ -10,13 +11,13 @@ printModule (Module defs) = unlines $ map printTopDef defs
 
 printTopDef :: TopDef -> String
 printTopDef (FunDef typ ident args body) = unlines [
-    ("define" <+> (printType typ) <+> (printIdent ident) <+> (printArgs args) <+> "{"),
+    ("define" <+> (printType typ) <+> (printIdent ident) <+> (pParens printArg args) <+> "{"),
     unlines $ map printInstr body,
     "}"]
 
 printTopDef (FunDec typ ident args) = "declare" <+> (printType typ)
                                                 <+> (printIdent ident)
-                                                <+> (printArgs args)
+                                                <+> (pParens printType args)
 
 printTopDef (ConstDef name typ init) = (printIdent name) <=> "constant" <+> (printType typ)
                                                                         <+> (printConst init)
@@ -34,11 +35,8 @@ printIdent :: Ident -> String
 printIdent (Ident str) = str
 
 
-printArgs :: [Arg] -> String
-printArgs args = '(':(printArgs' args) ++ ")"
-printArgs' [] = ""
-printArgs' [Arg typ ident] = (printType typ) <+> (printIdent ident)
-printArgs' (a:as) = (printArgs' [a]) ++ ", " ++ (printArgs' as)
+printArg :: Arg -> String
+printArg (Arg typ ident) = (printType typ) <+> (printIdent ident)
 
 
 printInstr :: Instr -> String
@@ -128,3 +126,7 @@ a <+> b = a ++ " " ++ b
 
 (<=>) :: String -> String -> String
 a <=> b = a ++ " = " ++ b
+
+pParens :: (a -> String) -> [a] -> String
+pParens p l = '(':(intercalate ", " $ map p l) ++ ")"
+

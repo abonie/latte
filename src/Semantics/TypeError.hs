@@ -22,6 +22,7 @@ pType (Str _) = "str"
 pType (Bool _) = "bool"
 pType (Void _) = "void"
 pType (Fun _ r a) = (pType r) ++ "(" ++ (concat (intersperse "," (map pType a))) ++ ")"
+pType (Arr _ t) = (pType t) ++ "[]"
 
 
 pPos :: PosInfo -> String

@@ -265,6 +265,10 @@ checkExpr (EApp pos fident args) = do
 returns :: Stmt a -> Bool
 returns (Ret _ _) = True
 returns (VRet _) = True
-returns (CondElse _ _ ifStmt elseStmt) = returns ifStmt && returns elseStmt
+returns (CondElse _ cond ifStmt elseStmt) = case cond of
+    ELitTrue _ -> returns ifStmt
+    ELitFalse _ -> returns elseStmt
+    _ -> returns ifStmt && returns elseStmt
 returns (BStmt _ (Block _ stmts)) = any returns stmts
+returns (Cond _ (ELitTrue _) stmt) = returns stmt
 returns _ = False
