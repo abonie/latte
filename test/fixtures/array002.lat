@@ -1,10 +1,10 @@
 int [] doubleArray (int [] a){
   int [] res = new int [a . length];
   int i = 0 ;
-  // for (int n : a){
+  for (int n : a){
     res [i] = 2 * n ;
     i ++ ;
-  // }
+  }
   return res ;
 }
 
@@ -38,8 +38,8 @@ int main () {
     }
   shiftLeft (a);
   int [] b = doubleArray (a);
-  //for (int x : a)printInt (x);
-  //for (int x : b)printInt (x);
+  for (int x : a)printInt (x);
+  for (int x : b)printInt (x);
   printInt(scalProd(a,b));
   return 0 ;
 }

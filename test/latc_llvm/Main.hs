@@ -40,7 +40,7 @@ testFiles :: [FilePath]
 testFiles = [
         "core001.lat",
         "core002.lat",
-        --"core003.lat", -- return checker
+        "core003.lat",
         "core004.lat",
         "core005.lat",
         "core006.lat",
@@ -58,8 +58,10 @@ testFiles = [
         --"core018.lat", requires input
         "core019.lat",
         "core020.lat",
-        --"core021.lat", -- return checker
-        "core022.lat"
+        "core021.lat",
+        "core022.lat",
+        "array001.lat",
+        "array002.lat"
     ]        
 
 

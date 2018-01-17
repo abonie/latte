@@ -13,6 +13,7 @@ data TopDef
     = FunDef Type Ident [Arg] [Instr]
     | FunDec Type Ident [Type]
     | ConstDef Ident Type Constant
+    -- | TypeDef Ident Type
   deriving (Eq, Ord, Show, Read)
 
 data Arg = Arg Type Ident
@@ -31,8 +32,10 @@ data Instr
     | Call Ident Type Ident [Carg]
     | VCall Type Ident [Carg]
     | Cmp Ident Cmpop Type Operand Operand
-    | Bitcast Ident Type Ident Type
+    | Bitcast Ident Operand Type
     | GEP Ident Type Operand Operand
+    | Insertval Ident Operand Operand Operand
+    | Extractval Ident Operand Operand
     | Label Ident
   deriving (Eq, Ord, Show, Read)
 
@@ -48,7 +51,7 @@ data Cmpop = Eq | Ne | Gt | Ge | Lt | Le
 data Operand = Reg Type Ident | ConstOperand Constant
   deriving (Eq, Ord, Show, Read)
 
-data Constant = Int Int Integer | Str String | Undef Type
+data Constant = Int Int Integer | Str String | Undef Type | Global Type Ident
   deriving (Eq, Ord, Show, Read)
 
 data Type
@@ -57,6 +60,7 @@ data Type
     | Array Int Type
     | Ptr Type
     | TLabel  -- TODO ugly name
+    | Struct [Type]
   deriving (Eq, Ord, Show, Read)
 
 i1  = I 1
@@ -79,3 +83,4 @@ constType :: Constant -> Type
 constType (Int i _) = I i
 constType (Undef t) = t
 constType (Str s) = Array (length s) i8
+constType (Global t _) = t

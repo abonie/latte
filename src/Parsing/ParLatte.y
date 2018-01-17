@@ -27,33 +27,35 @@ import Parsing.ErrM
   '--' { PT _ (TS _ 12) }
   '.' { PT _ (TS _ 13) }
   '/' { PT _ (TS _ 14) }
-  ';' { PT _ (TS _ 15) }
-  '<' { PT _ (TS _ 16) }
-  '<=' { PT _ (TS _ 17) }
-  '=' { PT _ (TS _ 18) }
-  '==' { PT _ (TS _ 19) }
-  '>' { PT _ (TS _ 20) }
-  '>=' { PT _ (TS _ 21) }
-  '[' { PT _ (TS _ 22) }
-  '[]' { PT _ (TS _ 23) }
-  ']' { PT _ (TS _ 24) }
-  'boolean' { PT _ (TS _ 25) }
-  'class' { PT _ (TS _ 26) }
-  'else' { PT _ (TS _ 27) }
-  'extends' { PT _ (TS _ 28) }
-  'false' { PT _ (TS _ 29) }
-  'if' { PT _ (TS _ 30) }
-  'int' { PT _ (TS _ 31) }
-  'new' { PT _ (TS _ 32) }
-  'null' { PT _ (TS _ 33) }
-  'return' { PT _ (TS _ 34) }
-  'string' { PT _ (TS _ 35) }
-  'true' { PT _ (TS _ 36) }
-  'void' { PT _ (TS _ 37) }
-  'while' { PT _ (TS _ 38) }
-  '{' { PT _ (TS _ 39) }
-  '||' { PT _ (TS _ 40) }
-  '}' { PT _ (TS _ 41) }
+  ':' { PT _ (TS _ 15) }
+  ';' { PT _ (TS _ 16) }
+  '<' { PT _ (TS _ 17) }
+  '<=' { PT _ (TS _ 18) }
+  '=' { PT _ (TS _ 19) }
+  '==' { PT _ (TS _ 20) }
+  '>' { PT _ (TS _ 21) }
+  '>=' { PT _ (TS _ 22) }
+  '[' { PT _ (TS _ 23) }
+  '[]' { PT _ (TS _ 24) }
+  ']' { PT _ (TS _ 25) }
+  'boolean' { PT _ (TS _ 26) }
+  'class' { PT _ (TS _ 27) }
+  'else' { PT _ (TS _ 28) }
+  'extends' { PT _ (TS _ 29) }
+  'false' { PT _ (TS _ 30) }
+  'for' { PT _ (TS _ 31) }
+  'if' { PT _ (TS _ 32) }
+  'int' { PT _ (TS _ 33) }
+  'new' { PT _ (TS _ 34) }
+  'null' { PT _ (TS _ 35) }
+  'return' { PT _ (TS _ 36) }
+  'string' { PT _ (TS _ 37) }
+  'true' { PT _ (TS _ 38) }
+  'void' { PT _ (TS _ 39) }
+  'while' { PT _ (TS _ 40) }
+  '{' { PT _ (TS _ 41) }
+  '||' { PT _ (TS _ 42) }
+  '}' { PT _ (TS _ 43) }
 
   L_ident {PT _ (TV _)}
   L_integ {PT _ (TI _)}
@@ -235,6 +237,9 @@ Stmt :: {
 }
 | 'while' '(' Expr ')' Stmt {
   (Just (tokenLineCol $1), AbsLatte.While (Just (tokenLineCol $1)) (snd $3)(snd $5)) 
+}
+| 'for' '(' Type Ident ':' Expr ')' Stmt {
+  (Just (tokenLineCol $1), AbsLatte.For (Just (tokenLineCol $1)) (snd $3)(snd $4)(snd $6)(snd $8)) 
 }
 | Expr ';' {
   (fst $1, AbsLatte.SExp (fst $1)(snd $1)) 

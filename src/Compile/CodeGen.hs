@@ -19,11 +19,11 @@ globDecls :: [LLVM.TopDef]
 globDecls = [
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@printInt")
-                [LLVM.i32],
+                [LLVM.i64],
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@printString")
                 [LLVM.Ptr LLVM.i8],
-    LLVM.FunDec LLVM.i32
+    LLVM.FunDec LLVM.i64
                 (LLVM.Ident "@readInt")
                 [],
     LLVM.FunDec (LLVM.Ptr LLVM.i8)
@@ -83,14 +83,25 @@ genStmt (Ass _ (LhsVar _ ident) expr) = do
     x <- genExpr expr
     setVar ident x
 
+genStmt (Ass _ (LhsInd _ arrIdent indExpr) expr) = do
+    -- TODO boilerplate?
+    -- XXX bounds checking
+    ind <- genExpr indExpr
+    struct <- getVar arrIdent
+    arr <- extractvalue 0 struct
+    ptr <- getelementptr arr ind
+    val <- genExpr expr
+    let t = typeToLLVM $ typeOf expr
+    emit $ LLVM.Store t val ptr
+
 genStmt (Incr _ (LhsVar _ ident)) = do
     val <- getVar ident
-    r <- add val $ LLVM.litI32 1
+    r <- add val $ LLVM.litI64 1
     setVar ident r
 
 genStmt (Decr _ (LhsVar _ ident)) = do
     val <- getVar ident
-    r <- sub val $ LLVM.litI32 1
+    r <- sub val $ LLVM.litI64 1
     setVar ident r
 
 genStmt (Ret _ expr) = do
@@ -139,6 +150,47 @@ genStmt (While _ expr stmt) = do
     br lcond
     setLabel lafter
 
+genStmt (For (pos, _) typ ident expr stmt) = do
+    struct <- genExpr expr
+    len <- extractvalue 1 struct
+    arr <- extractvalue 0 struct
+    lcurrent <- currentLabel
+    lcond <- newLabel
+    lloop <- newLabel
+    lend <- newLabel
+    br lcond
+    setLabel lloop
+    r <- newReg
+    let i = LLVM.Reg LLVM.i64 r
+    elem <- getelementptr arr i >>= load
+    iinc <- add i (LLVM.litI64 1)
+    newScope
+    addVar typ ident pos
+    setVar ident elem
+    genStmt stmt
+    endScope
+    lafter <- currentLabel
+    br lcond
+    setLabel lcond
+    emit $ LLVM.Phi r LLVM.i64 (LLVM.litI64 0) lcurrent iinc lafter
+    cond <- cmp LLVM.Ge i len
+    cbr cond lend lloop
+    setLabel lend
+    -- %a = `genExpr expr`
+    -- %l = extractvalue {typ*, i64} a, 1
+    -- br %LCond
+    -- LCond:
+    -- %i = phi i64 [0, %LPrev], [%iinc, %LLoop]
+    -- %c = icmp sge i64 %i, %l
+    -- br i1 %c, %LEnd, %LLoop
+    -- LLoop:
+    -- %iinc = add i64 %i, 1
+    -- `addVar ...` ??
+    -- `genStmt stmt`
+    -- br %LCond
+    -- LEnd:
+    --
+
 genStmt (SExp _ expr) = void $ genExpr expr
 
 
@@ -146,17 +198,28 @@ genExpr :: Expr (PosInfo, TypeInfo) -> LLGen LLVM.Operand
 genExpr (EVar _ ident) = do
     getVar ident
 
+genExpr (EMem _ ident mem) = do
+    -- XXX will have to change for objects
+    struct <- getVar ident
+    -- XXX assume mem is `length` because otherwise this would not pass through type checking
+    extractvalue 1 struct  -- extract length
+
+genExpr (EInd _ ident expr) = do
+    ind <- genExpr expr
+    struct <- getVar ident
+    arr <- extractvalue 0 struct
+    getelementptr arr ind >>= load
+
 genExpr (ELitTrue _) = return $ LLVM.litI1 1
 
 genExpr (ELitFalse _) = return $ LLVM.litI1 0
 
-genExpr (ELitInt _ n) = return $ LLVM.litI32 n
+genExpr (ELitInt _ n) = return $ LLVM.litI64 n
 
 genExpr (EString _ s) = do
     r <- newReg
     glob <- addStr s r
-    let len = max 1 $ (length s) - 1
-    emit $ LLVM.Bitcast r (LLVM.Ptr (LLVM.Array len LLVM.i8)) glob (LLVM.Ptr LLVM.i8)
+    emit $ LLVM.Bitcast r glob (LLVM.Ptr LLVM.i8)
     return $ LLVM.Reg (LLVM.Ptr LLVM.i8) r
 
 genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
@@ -175,7 +238,7 @@ genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
         Just res <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [len]
         _ <- call LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
                             [res, x1, l1, LLVM.litI32 0, LLVM.litI1 1]
-        ptr <- gep res l1
+        ptr <- getelementptr res l1
         l2plus1 <- add l2 $ LLVM.litI64 1
         _ <- call LLVM.Void (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
                             [ptr, x2, l2plus1, LLVM.litI32 0, LLVM.litI1 1]
@@ -199,7 +262,7 @@ genExpr (Not _ expr) = do
 genExpr (Neg _ expr) = do
     x <- genExpr expr
     r <- newReg
-    mul x $ LLVM.litI32 (-1)
+    mul x $ LLVM.litI64 (-1)
 
 genExpr (EAnd _ expr1 expr2) = do
     x1 <- genExpr expr1
@@ -232,6 +295,17 @@ genExpr (EOr _ expr1 expr2) = do
     r3 <- newReg
     emit $ LLVM.Phi r3 LLVM.i1 (LLVM.litI1 1) l1 x2 l2'
     return (LLVM.Reg LLVM.i1 r3)
+
+genExpr (EArr _ t expr) = do
+    len <- genExpr expr
+    let elemType = typeToLLVM t
+    size <- mul len $ LLVM.litI64 $ sizeof elemType
+    Just arr <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [size]
+    -- TODO bitcast
+    ptr <- bitcast arr $ LLVM.Ptr elemType
+    tmp <- insertvalue (LLVM.ConstOperand (LLVM.Undef $ LLVM.Struct [LLVM.Ptr elemType, LLVM.i64])) ptr $ LLVM.litI64 0
+    insertvalue tmp len $ LLVM.litI64 1
+    -- TODO default initialization?
 
 genExpr (EApp (_, Just typ) (Ident fname) args) = do
     argValues <- mapM genExpr args
@@ -287,15 +361,57 @@ call typ fname args =
         return $ Just $ LLVM.Reg typ r
 
 
-gep :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
-gep ptr idx = do
+phi :: (LLVM.Operand, LLVM.Ident) -> (LLVM.Operand, LLVM.Ident) -> LLGen LLVM.Operand
+phi (v1, l1) (v2, l2) = do
+    r <- newReg
+    let typ = LLVM.operandType v1
+    emit $ LLVM.Phi r typ v1 l1 v2 l2
+    return $ LLVM.Reg typ r
+
+
+getelementptr :: LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
+getelementptr ptr idx = do
     res <- newReg
     let LLVM.Ptr typ = LLVM.operandType ptr
     emit $ LLVM.GEP res typ ptr idx 
     return $ LLVM.Reg (LLVM.Ptr typ) res
 
 
+load :: LLVM.Operand -> LLGen LLVM.Operand
+load ptr = do
+    res <- newReg
+    let LLVM.Ptr typ = LLVM.operandType ptr
+    emit $ LLVM.Load res typ ptr
+    return $ LLVM.Reg typ res
+
+
+insertvalue :: LLVM.Operand -> LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
+insertvalue struct val idx = do
+    res <- newReg
+    emit $ LLVM.Insertval res struct val idx
+    return $ LLVM.Reg (LLVM.operandType struct) res
+
+
+extractvalue :: Int -> LLVM.Operand -> LLGen LLVM.Operand
+extractvalue idx struct = do
+    res <- newReg
+    emit $ LLVM.Extractval res struct $ LLVM.litI64 $ toInteger idx
+    let LLVM.Struct types = LLVM.operandType struct
+    return $ LLVM.Reg (types !! idx) res
+
+
+bitcast :: LLVM.Operand -> LLVM.Type -> LLGen LLVM.Operand
+bitcast val typ = do
+    r <- newReg
+    emit $ LLVM.Bitcast r val typ
+    return $ LLVM.Reg typ r
+
+
 -- TODO XXX
+sizeof :: LLVM.Type -> Integer
+sizeof (LLVM.I n) = toInteger (n `div` 8)  -- XXX
+sizeof (LLVM.Ptr _) = 8
+
 cmpOp2LLVM :: RelOp a -> LLVM.Cmpop
 cmpOp2LLVM (LTH a) = LLVM.Lt
 cmpOp2LLVM (LE a) = LLVM.Le

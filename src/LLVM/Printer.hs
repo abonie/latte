@@ -19,7 +19,7 @@ printTopDef (FunDec typ ident args) = "declare" <+> (printType typ)
                                                 <+> (printIdent ident)
                                                 <+> (pParens printType args)
 
-printTopDef (ConstDef name typ init) = (printIdent name) <=> "constant" <+> (printType typ)
+printTopDef (ConstDef name typ init) = '@':(printIdent name) <=> "constant" <+> (printType typ)
                                                                         <+> (printConst init)
 
 
@@ -29,6 +29,7 @@ printType Void = "void"
 printType (Array size typ) = "[" ++ (show size) <+> "x" <+> printType typ ++ "]"
 printType (Ptr typ) = (printType typ) ++ "*"
 printType TLabel = "label"
+printType (Struct types) = '{':(intercalate ", " $ map printType types) ++ "}"
 
 
 printIdent :: Ident -> String
@@ -76,9 +77,9 @@ printInstr (VCall typ fname args) = "call" <+> (printType typ)
 
 printInstr (Label (Ident (_:t))) = (printIdent $ Ident t) ++ ":"
 
-printInstr (Bitcast res typ1 const typ2) = (printIdent res) <=> "bitcast" <+> (printType typ1)
-                                                                          <+> (printIdent const)
-                                                                          <+> "to" <+> (printType typ2)
+printInstr (Bitcast res op typ) = (printIdent res) <=> "bitcast" <+> (printType $ operandType op)
+                                                                          <+> (printOperand op)
+                                                                          <+> "to" <+> (printType typ)
 
 printInstr (GEP res typ ptr idx) = (printIdent res) <=> "getelementptr" <+> (printType typ) ++ ", "
                                                                         ++ (printType $ Ptr typ)
@@ -86,6 +87,13 @@ printInstr (GEP res typ ptr idx) = (printIdent res) <=> "getelementptr" <+> (pri
                                                                         ++ (printType i64)
                                                                         <+> (printOperand idx)
 
+printInstr (Insertval res to val idx) = let (t1, t2) = (operandType to, operandType val) in
+    (printIdent res) <=> "insertvalue" <+> (printType t1) <+> (printOperand to) ++ ", "
+                                        ++ (printType t2) <+> (printOperand val) ++ ", "
+                                                           ++ (printOperand idx)
+
+printInstr (Extractval res struct idx) = let typ = operandType struct in
+    (printIdent res) <=> "extractvalue" <+> (printType typ) <+> (printOperand struct) ++ ", " ++ (printOperand idx)
 
 printCargs :: [Carg] -> String
 printCargs args = '(':(printCargs' args) ++ ")"
@@ -120,6 +128,7 @@ printConst (Int _ n) = show n
 printConst (Str "") = "c\"\\00\""
 printConst (Str s) = 'c':((init s) ++ "\\00\"")
 printConst (Undef _) = "undef"
+printConst (Global _ ident) = '@':(printIdent ident)
 
 (<+>) :: String -> String -> String
 a <+> b = a ++ " " ++ b

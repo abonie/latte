@@ -7,9 +7,9 @@ declare i32 @printf(i8*, ...)
 declare i32 @scanf(i8*, ...)
 declare i32 @puts(i8*)
 
-define void @printInt(i32 %x) {
+define void @printInt(i64 %x) {
        %t0 = getelementptr [4 x i8], [4 x i8]* @dnl, i32 0, i32 0
-       call i32 (i8*, ...) @printf(i8* %t0, i32 %x) 
+       call i32 (i8*, ...) @printf(i8* %t0, i64 %x)
        ret void
 }
 
@@ -24,12 +24,12 @@ entry:  call i32 @puts(i8* %s)
 	ret void
 }
 
-define i32 @readInt() {
-entry:	%res = alloca i32
+define i64 @readInt() {
+entry:	%res = alloca i64
         %t1 = getelementptr [3 x i8], [3 x i8]* @d, i32 0, i32 0
-	call i32 (i8*, ...) @scanf(i8* %t1, i32* %res)
-	%t2 = load i32, i32* %res
-	ret i32 %t2
+	call i32 (i8*, ...) @scanf(i8* %t1, i64* %res)
+	%t2 = load i64, i64* %res
+	ret i64 %t2
 }
 
 define double @readDouble() {

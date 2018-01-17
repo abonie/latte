@@ -45,6 +45,9 @@ testCases = [
     ("bad025.lat", isNoReturn, "throws"),
     ("bad026.lat", isTypeMismatch pInt pStr, "throws"),
     ("bad027.lat", isTypeMismatch pStr pInt, "throws"),
+    ("badlen.lat", isTypeMismatch pStr pInt, "array length type"),
+    ("badmem.lat", isOtherError, "calling length on non-array"),
+    ("goodlen.lat",    success, "array length type"),
     ("goodblock5.lat", success, "accepts"),
     ("goodblock4.lat", success, "accepts"),
     ("goodblock3.lat", success, "accepts"),
@@ -55,7 +58,9 @@ testCases = [
     ("printInt.lat",   success, "accepts builtin printInt"),
     ("printStr.lat",   success, "accepts builtin printString"),
     ("readInt.lat",    success, "accepts builtin readInt"),
-    ("readStr.lat",    success, "accepts builtin readString")
+    ("readStr.lat",    success, "accepts builtin readString"),
+    ("array001.lat",   success, "accepts array001"),
+    ("array002.lat",   success, "accepts array002")
     ]
 
 

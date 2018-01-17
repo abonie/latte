@@ -18,7 +18,7 @@ class Monad m => MonadCodeGen m where
     newLabel :: m LLVM.Ident
     newReg :: m LLVM.Ident
     addDecl :: LLVM.TopDef -> m ()
-    addStr :: String -> LLVM.Ident -> m LLVM.Ident
+    addStr :: String -> LLVM.Ident -> m LLVM.Operand
     callStrlen :: LLVM.Operand -> m LLVM.Operand
     addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
     setVar :: Ident -> LLVM.Operand -> m ()
@@ -41,6 +41,7 @@ type LLGen = ExceptT (LatteError PType) (State Env)
 --    , instrs :: [LLVM.Instr]
 --    , term :: Maybe LLVM.Instr
 --    }
+
 
 data Env
     = Env {
@@ -105,10 +106,10 @@ instance MonadCodeGen LLGen where
     addStr str r = do
         n <- gets count
         modify $ \s -> s { count = n + 1 }
-        let globname = LLVM.Ident $ "@str" ++ (show n)
+        let globname = LLVM.Ident $ "str" ++ (show n)
         let atype = LLVM.Array (max 1 $ (length str) - 1) LLVM.i8
         addDecl $ LLVM.ConstDef globname atype (LLVM.Str str)
-        return globname
+        return $ LLVM.ConstOperand $ LLVM.Global (LLVM.Ptr atype) globname
 
     addVar typ ident _ = do  -- TODO blank: _
         r <- newReg
@@ -199,10 +200,11 @@ envToModule env = let
 
 
 typeToLLVM :: Type a -> LLVM.Type
-typeToLLVM (Int _) = LLVM.i32
+typeToLLVM (Int _) = LLVM.i64
 typeToLLVM (Bool _) = LLVM.i1
 typeToLLVM (Void _) = LLVM.Void
 typeToLLVM (Str _) = LLVM.Ptr LLVM.i8
+typeToLLVM (Arr _ t) = LLVM.Struct [LLVM.Ptr $ typeToLLVM t, LLVM.i64]
 
 argToLLVM :: Arg a -> LLVM.Arg
 argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident $ '%':name)

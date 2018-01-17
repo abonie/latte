@@ -153,7 +153,11 @@ checkStmt (Cond pos expr stmt) = do
     (exprType, expr') <- checkExpr expr
     matchTypes exprType pBool pos
     stmt' <- checkStmt stmt
-    return $ Cond (pos, Nothing) expr' stmt'
+    -- XXX
+    case expr of
+        ELitTrue _ -> return $ stmt'
+        -- ELitFalse _ -> return $ Empty (nopos, Nothing)
+        _ -> return $ Cond (pos, Nothing) expr' stmt'
 
 -- XXX boiler
 checkStmt (CondElse pos expr ifStmt elseStmt) = do
@@ -161,12 +165,27 @@ checkStmt (CondElse pos expr ifStmt elseStmt) = do
     matchTypes exprType pBool pos
     ifStmt' <- checkStmt ifStmt
     elseStmt' <- checkStmt elseStmt
-    return $ CondElse (pos, Nothing) expr' ifStmt' elseStmt'
+    -- XXX
+    case expr of
+        ELitTrue _ -> return $ ifStmt'
+        ELitFalse _ -> return $ elseStmt'
+        _ -> return $ CondElse (pos, Nothing) expr' ifStmt' elseStmt'
 
 checkStmt (While pos expr stmt) = do
-    (Cond info' expr' stmt') <- checkStmt $ Cond pos expr stmt  -- XXX
-    return $ While info' expr' stmt'
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType pBool pos
+    stmt' <- checkStmt stmt
+    return $ While (pos, Nothing) expr' stmt'
 
+checkStmt (For pos typ ident expr stmt) = do
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType (Arr nopos typ) pos
+    enterBlock
+    declare typ ident pos
+    stmt' <- checkStmt stmt
+    leaveBlock
+    return $ For (pos, Nothing) (mapnovars typ) ident expr' stmt'
+    
 checkStmt (SExp pos expr) = do
     (_, expr') <- checkExpr expr
     return $ SExp (pos, Nothing) expr'
@@ -177,6 +196,13 @@ checkExpr (EVar pos ident) = do
     varType <- typeof ident pos
     return (varType, EVar (pos, Just varType) ident)
 
+checkExpr (EMem pos ident mem) = do
+    varType <- typeof ident pos
+    -- TODO XXX boilerplate - check if type is an array of something
+    case (varType, mem) of
+        (Arr _ typ, Ident "length") -> return (pInt, EMem (pos, Just pInt) ident mem)
+        _ -> raise $ otherError (Just "expected array type") pos  -- XXX
+
 checkExpr (EInd pos ident expr) = do
     (exprType, expr') <- checkExpr expr
     matchTypes exprType pInt pos
@@ -184,7 +210,7 @@ checkExpr (EInd pos ident expr) = do
     -- TODO XXX Check if type matches (Arr _ something) !!!
     case varType of
         Arr _ typ -> return (typ, EInd (pos, Just typ) ident expr')
-        _ -> return (varType, EInd (pos, Nothing) ident expr') -- XXX should throw error !!!
+        _ -> raise $ otherError (Just "expected array type") pos  -- XXX
 
 checkExpr lit@(ELitTrue pos) = return (Bool pos, settype (Bool pos) lit)
 
