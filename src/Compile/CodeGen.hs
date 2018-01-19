@@ -3,7 +3,10 @@
 module Compile.CodeGen where
 import qualified LLVM
 import qualified Data.Map as Map
+import Data.List (elemIndex)
+import Data.Maybe (fromJust)
 import Control.Monad (void, forM_, when, unless)
+import Control.Monad.State
 import Parsing.AbsLatte
 import Errors.LatteError
 import Semantics.TypeInfo
@@ -11,8 +14,8 @@ import Semantics.TypeCheck (returns) -- TODO move to different module and maybe 
 import Compile.Monad
 
 
-compile :: Program (PosInfo, TypeInfo) -> Either (LatteError PType) LLVM.Module
-compile prog = runGen $ genProg prog
+compile :: (Program (PosInfo, TypeInfo), TypeEnv) -> Either (LatteError PType) LLVM.Module
+compile (prog, te) = runGen te $ genProg prog
 
 
 globDecls :: [LLVM.TopDef]
@@ -28,6 +31,9 @@ globDecls = [
                 [],
     LLVM.FunDec (LLVM.Ptr LLVM.i8)
                 (LLVM.Ident "@readString")
+                [],
+    LLVM.FunDec (LLVM.Void)
+                (LLVM.Ident "@error")
                 [],
     LLVM.FunDec LLVM.Void
                 (LLVM.Ident "@llvm.memcpy.p0i8.p0i8.i64")
@@ -51,6 +57,8 @@ genTopDef (FnDef _ (FunDef _ retType fname args body@(Block _ stmts))) = do
     beginFunction retType fname args
     mapM_ genStmt stmts
     endFunction
+
+genTopDef (ClsDef _ _ _ _) = return ()
 
 
 genBlock :: Block (PosInfo, TypeInfo) -> LLGen ()
@@ -83,7 +91,7 @@ genStmt (Ass _ (LhsVar _ ident) expr) = do
     x <- genExpr expr
     setVar ident x
 
-genStmt (Ass _ (LhsInd _ arrIdent indExpr) expr) = do
+genStmt (Ass _ (LhsInd (_, Just typ) arrIdent indExpr) expr) = do
     -- TODO boilerplate?
     -- XXX bounds checking
     ind <- genExpr indExpr
@@ -91,8 +99,19 @@ genStmt (Ass _ (LhsInd _ arrIdent indExpr) expr) = do
     arr <- extractvalue 0 struct
     ptr <- getelementptr arr ind
     val <- genExpr expr
-    let t = typeToLLVM $ typeOf expr
-    emit $ LLVM.Store t val ptr
+    elemType <- convertType typ
+    emit $ LLVM.Store elemType val ptr
+
+genStmt (Ass _ (LhsMem (_, Just typ) obj mem) expr) = do
+    x <- genExpr expr
+    TCls _ cls <- getVarType obj
+    var <- getVar obj
+    tenv <- gets typeEnv
+    let Just (_, members) = Map.lookup cls tenv
+    void $ insertvalue var x $ LLVM.litI64 $ toInteger $ findIndex members
+  where
+    -- TODO XXX extract this logic
+    findIndex l = fromJust $ elemIndex mem $ map fst l
 
 genStmt (Incr _ (LhsVar _ ident)) = do
     val <- getVar ident
@@ -106,7 +125,7 @@ genStmt (Decr _ (LhsVar _ ident)) = do
 
 genStmt (Ret _ expr) = do
     x <- genExpr expr
-    let t = typeToLLVM $ typeOf expr
+    t <- convertType $ typeOf expr
     emit $ LLVM.Ret t x
 
 genStmt (VRet _) = do
@@ -176,20 +195,6 @@ genStmt (For (pos, _) typ ident expr stmt) = do
     cond <- cmp LLVM.Ge i len
     cbr cond lend lloop
     setLabel lend
-    -- %a = `genExpr expr`
-    -- %l = extractvalue {typ*, i64} a, 1
-    -- br %LCond
-    -- LCond:
-    -- %i = phi i64 [0, %LPrev], [%iinc, %LLoop]
-    -- %c = icmp sge i64 %i, %l
-    -- br i1 %c, %LEnd, %LLoop
-    -- LLoop:
-    -- %iinc = add i64 %i, 1
-    -- `addVar ...` ??
-    -- `genStmt stmt`
-    -- br %LCond
-    -- LEnd:
-    --
 
 genStmt (SExp _ expr) = void $ genExpr expr
 
@@ -199,16 +204,32 @@ genExpr (EVar _ ident) = do
     getVar ident
 
 genExpr (EMem _ ident mem) = do
-    -- XXX will have to change for objects
+    typ <- getVarType ident
     struct <- getVar ident
-    -- XXX assume mem is `length` because otherwise this would not pass through type checking
-    extractvalue 1 struct  -- extract length
+    case typ of
+        -- XXX assume mem is `length` because otherwise this would not pass through type checking
+        Arr _ _ -> extractvalue 1 struct
+        TCls _ cls -> do
+            tenv <- gets typeEnv
+            case Map.lookup cls tenv of
+                Nothing -> error "not gonna happen?" -- XXX
+                Just (_, members) -> extractvalue (findIndex members) struct
+  where
+    findIndex l = fromJust $ elemIndex mem $ map fst l
 
 genExpr (EInd _ ident expr) = do
     ind <- genExpr expr
     struct <- getVar ident
     arr <- extractvalue 0 struct
     getelementptr arr ind >>= load
+
+genExpr (ENew _ ident) = do
+    typ <- convertType $ TCls nopos ident
+    return $ LLVM.ConstOperand $ LLVM.Undef typ
+
+genExpr (ENull _ ident) = do
+    typ <- convertType $ TCls nopos ident
+    return $ LLVM.ConstOperand $ LLVM.Null $ LLVM.Ptr typ
 
 genExpr (ELitTrue _) = return $ LLVM.litI1 1
 
@@ -298,7 +319,7 @@ genExpr (EOr _ expr1 expr2) = do
 
 genExpr (EArr _ t expr) = do
     len <- genExpr expr
-    let elemType = typeToLLVM t
+    elemType <- convertType t
     size <- mul len $ LLVM.litI64 $ sizeof elemType
     Just arr <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [size]
     -- TODO bitcast
@@ -309,7 +330,7 @@ genExpr (EArr _ t expr) = do
 
 genExpr (EApp (_, Just typ) (Ident fname) args) = do
     argValues <- mapM genExpr args
-    let lltype = typeToLLVM typ
+    lltype <- convertType typ
     let llid = LLVM.Ident ('@':fname)
     maybeRet <- call lltype llid argValues
     case maybeRet of

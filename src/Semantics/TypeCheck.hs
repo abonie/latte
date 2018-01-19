@@ -10,7 +10,7 @@ import Semantics.TypeInfo
 import Errors.LatteError
 
 
-typeCheck :: PProgram -> Either (LatteError PType) (Program (PosInfo, TypeInfo))
+typeCheck :: PProgram -> Either (LatteError PType) (Program (PosInfo, TypeInfo), TypeEnv)
 typeCheck prog = runTypeCheck $ checkProg prog
 
 
@@ -31,6 +31,10 @@ builtins = [
     FnDef nopos $ FunDef nopos (pStr)
                                (Ident "readString")
                                []
+                               (Block nopos []),
+    FnDef nopos $ FunDef nopos (pVoid)
+                               (Ident "error")
+                               []
                                (Block nopos [])
     ]
 
@@ -39,6 +43,7 @@ checkProg :: PProgram -> TCheck (Program (PosInfo, TypeInfo))
 checkProg (Program pos defs) = do
     mapM_ addTypeDecl builtins
     mapM_ addTypeDecl defs
+    -- TODO right now class declaration must be before its usage in source code
     defs' <- mapM checkTopDef defs
     return $ Program (pos, Nothing) defs'
 
@@ -63,8 +68,17 @@ checkTopDef (FnDef pos (FunDef posf retType fname args body@(Block posb stmts)))
     return $ FnDef (pos, Nothing)
         (FunDef (posf, Nothing) (mapnovars retType) fname (map mapnovars args) (Block (posb, Nothing) stmts'))
 
-checkTopDef clsdef@(ClsDef pos name ext body) = do
-    return $ mapnovars clsdef
+checkTopDef (ClsDef pos name ext body@(CBody posb decls)) = do
+    enterClass name
+    decls' <- mapM checkMem decls
+    leaveClass
+    return $ ClsDef (pos, Nothing) name (mapnovars ext) $ CBody (posb, Nothing) decls'
+
+
+checkMem :: MemDecl PosInfo -> TCheck (MemDecl (PosInfo, TypeInfo))
+checkMem (MemVar pos typ idents) = do
+    mapM_ (\ident -> declare typ ident pos) idents
+    return $ MemVar (pos, Just typ) (mapnovars typ) idents
 
 
 checkBlock :: PBlock -> TCheck (Block (PosInfo, TypeInfo))
@@ -111,7 +125,17 @@ checkStmt (Ass pos (LhsInd posi ident indExpr) expr) = do
     (exprType, expr') <- checkExpr expr
     varType <- typeof ident pos
     matchTypes varType (Arr nopos exprType) pos
-    return $ Ass (pos, Nothing) (LhsInd (posi, Just varType) ident indExpr') expr'
+    return $ Ass (pos, Nothing) (LhsInd (posi, Just exprType) ident indExpr') expr'
+
+checkStmt (Ass pos (LhsMem posm obj mem) expr) = do
+    (exprType, expr') <- checkExpr expr
+    clsType <- typeof obj pos
+    case clsType of
+        TCls _ clsName -> do
+            t <- memberType clsName mem pos
+            matchTypes t exprType pos
+            return $ Ass (pos, Nothing) (LhsMem (posm, Just t) obj mem) expr'
+        _ -> raise $ otherError (Just "expected an object") pos
 
 checkStmt (Incr pos (LhsVar posv ident)) = do
     varType <- typeof ident pos
@@ -201,6 +225,9 @@ checkExpr (EMem pos ident mem) = do
     -- TODO XXX boilerplate - check if type is an array of something
     case (varType, mem) of
         (Arr _ typ, Ident "length") -> return (pInt, EMem (pos, Just pInt) ident mem)
+        (TCls _ cls, _) -> do
+            memType <- memberType cls mem pos
+            return (memType, EMem (pos, Just memType) ident mem)
         _ -> raise $ otherError (Just "expected array type") pos  -- XXX
 
 checkExpr (EInd pos ident expr) = do
@@ -211,6 +238,16 @@ checkExpr (EInd pos ident expr) = do
     case varType of
         Arr _ typ -> return (typ, EInd (pos, Just typ) ident expr')
         _ -> raise $ otherError (Just "expected array type") pos  -- XXX
+
+checkExpr (ENew pos ident) = do
+    checkClass ident pos
+    let typ = TCls nopos ident
+    return (typ, ENew (pos, Just typ) ident)
+
+checkExpr (ENull pos ident) = do
+    checkClass ident pos
+    let typ = TCls nopos ident
+    return (typ, ENull (pos, Just typ) ident)
 
 checkExpr lit@(ELitTrue pos) = return (Bool pos, settype (Bool pos) lit)
 

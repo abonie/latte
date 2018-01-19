@@ -128,6 +128,7 @@ printConst (Int _ n) = show n
 printConst (Str "") = "c\"\\00\""
 printConst (Str s) = 'c':((init s) ++ "\\00\"")
 printConst (Undef _) = "undef"
+printConst (Null _) = "null"
 printConst (Global _ ident) = '@':(printIdent ident)
 
 (<+>) :: String -> String -> String

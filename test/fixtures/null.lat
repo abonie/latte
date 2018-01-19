@@ -1,0 +1,7 @@
+class Foo {
+}
+
+int main () {
+	Foo f = (Foo) null;
+	return 0;
+}

@@ -51,7 +51,7 @@ data Cmpop = Eq | Ne | Gt | Ge | Lt | Le
 data Operand = Reg Type Ident | ConstOperand Constant
   deriving (Eq, Ord, Show, Read)
 
-data Constant = Int Int Integer | Str String | Undef Type | Global Type Ident
+data Constant = Int Int Integer | Str String | Undef Type | Global Type Ident | Null Type
   deriving (Eq, Ord, Show, Read)
 
 data Type

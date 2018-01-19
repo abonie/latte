@@ -4,10 +4,10 @@ module Compile.Monad where
 import qualified LLVM
 import qualified Data.Map as Map
 import qualified Data.Set as Set
-import Data.Maybe (isJust)
 import Control.Monad (unless)
 import Control.Monad.Except
 import Control.Monad.State
+import Utils (lookupNested)
 import Errors.LatteError
 import Parsing.AbsLatte
 import Semantics.TypeInfo
@@ -23,13 +23,15 @@ class Monad m => MonadCodeGen m where
     addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
     setVar :: Ident -> LLVM.Operand -> m ()
     getVar :: Ident -> m LLVM.Operand
+    getVarType :: Ident -> m (Type (PosInfo, TypeInfo))
     newScope :: m ()
     endScope :: m ()
     beginFunction :: Type (PosInfo, TypeInfo) -> Ident -> [Arg (PosInfo, TypeInfo)] -> m ()
     endFunction :: m ()
     setLabel :: LLVM.Ident -> m ()
     currentLabel :: m LLVM.Ident
-    runGen :: m () -> Either (LatteError PType) LLVM.Module
+    convertType :: Type a -> m LLVM.Type
+    runGen :: TypeEnv -> m () -> Either (LatteError PType) LLVM.Module
 
 
 type LLGen = ExceptT (LatteError PType) (State Env)
@@ -52,19 +54,13 @@ data Env
     , scope :: Ident
     , count :: Integer
     , label :: LLVM.Ident
+    , typeEnv :: TypeEnv
     }
 
-type VarEnv = Map.Map Ident (LLVM.Operand, LLVM.Type)
+-- XXX copied over
+type TypeEnv = Map.Map Ident (Maybe Ident, [(Ident, PType)])
 
-lookupNested :: Ord k => k -> [Map.Map k a] -> Maybe a
-lookupNested key = foldl foo Nothing where
-    foo acc map = case acc of
-        Nothing -> Map.lookup key map
-        _ -> acc
-
-memberNested :: Ord k => k -> [Map.Map k a] -> Bool
-memberNested key = isJust . lookupNested key
-
+type VarEnv = Map.Map Ident (LLVM.Operand, Type (PosInfo, TypeInfo))
 
 type FunEnv = Map.Map Ident (Type (), [Arg ()])
 
@@ -80,7 +76,11 @@ emptyEnv
     , scope = Ident ""
     , count = 0
     , label = LLVM.Ident "%0"
+    , typeEnv = Map.empty
     }
+
+newEnv :: TypeEnv -> Env
+newEnv te = emptyEnv { typeEnv = te }
 
 
 instance MonadCodeGen LLGen where
@@ -113,16 +113,16 @@ instance MonadCodeGen LLGen where
 
     addVar typ ident _ = do  -- TODO blank: _
         r <- newReg
-        let typ' = (typeToLLVM typ)
+        typ' <- convertType typ
         emit $ LLVM.Alloc r typ'
         (vs:tl) <- gets vars
-        modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg typ' r), typ') vs):tl }
+        modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg typ' r), typ) vs):tl }
 
     setVar ident val = do
         vs <- gets vars
         case lookupNested ident vs of
             Nothing -> throwError CompileError -- TODO
-            Just (reg, typ) -> emit $ LLVM.Store typ val reg
+            Just (reg, _) -> emit $ LLVM.Store (LLVM.operandType reg) val reg
 
     callStrlen reg = do
         res <- newReg
@@ -133,10 +133,16 @@ instance MonadCodeGen LLGen where
         vs <- gets vars
         case lookupNested ident vs of
             Nothing -> throwError CompileError -- TODO
-            Just (reg@(LLVM.Reg _ ident), typ) -> do
+            Just (reg@(LLVM.Reg typ ident), _) -> do
                 res <- newReg
                 emit $ LLVM.Load res typ reg
                 return $ LLVM.Reg typ res
+
+    getVarType ident = do
+        vs <- gets vars
+        case lookupNested ident vs of
+            Nothing -> throwError CompileError -- TODO
+            Just (_, typ) -> return typ
 
     newScope = do
         vs <- gets vars
@@ -154,7 +160,8 @@ instance MonadCodeGen LLGen where
         modify $ \s -> s { scope = fname }
         forM_ args (\(Arg (pos,_) typ ident@(Ident name)) -> do
             addVar typ ident pos
-            setVar ident (LLVM.Reg (typeToLLVM typ) $ LLVM.Ident $ '%':name) )
+            typ' <- convertType typ
+            setVar ident (LLVM.Reg typ' $ LLVM.Ident $ '%':name) )
         modify $ \s -> s { signs = fenv' }
 
     endFunction = do
@@ -186,7 +193,11 @@ instance MonadCodeGen LLGen where
         l <- gets label
         return l
 
-    runGen llgen = let (res, state) = runState (runExceptT llgen) emptyEnv in
+    convertType typ = do
+        tenv <- gets typeEnv
+        return $ typeToLLVM tenv typ
+
+    runGen te llgen = let (res, state) = runState (runExceptT llgen) (newEnv te) in
         either Left (const $ Right $ envToModule state) res
 
 
@@ -194,17 +205,20 @@ envToModule :: Env -> LLVM.Module
 envToModule env = let
     mkFunDef (ident@(Ident name), instrs) = let
             Just (ret, args) = Map.lookup ident (signs env)
-            args' = map argToLLVM args in
-        LLVM.FunDef (typeToLLVM ret) (LLVM.Ident ('@':name)) args' (reverse instrs) in
+            args' = map (argToLLVM $ typeEnv env) args in
+        LLVM.FunDef (typeToLLVM (typeEnv env) ret) (LLVM.Ident ('@':name)) args' (reverse instrs) in
     LLVM.Module $ (decls env) ++ map mkFunDef (Map.assocs $ code env)
 
 
-typeToLLVM :: Type a -> LLVM.Type
-typeToLLVM (Int _) = LLVM.i64
-typeToLLVM (Bool _) = LLVM.i1
-typeToLLVM (Void _) = LLVM.Void
-typeToLLVM (Str _) = LLVM.Ptr LLVM.i8
-typeToLLVM (Arr _ t) = LLVM.Struct [LLVM.Ptr $ typeToLLVM t, LLVM.i64]
+typeToLLVM :: TypeEnv -> Type a -> LLVM.Type
+typeToLLVM _ (Int _) = LLVM.i64
+typeToLLVM _ (Bool _) = LLVM.i1
+typeToLLVM _ (Void _) = LLVM.Void
+typeToLLVM _ (Str _) = LLVM.Ptr LLVM.i8
+typeToLLVM env (Arr _ t) = LLVM.Struct [LLVM.Ptr $ typeToLLVM env t, LLVM.i64]
+typeToLLVM env (TCls _ name) = case Map.lookup name env of
+    Nothing -> error "should not happen"
+    Just (_, members) -> LLVM.Ptr $ LLVM.Struct $ map (\(_, typ) -> typeToLLVM env typ) members
 
-argToLLVM :: Arg a -> LLVM.Arg
-argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident $ '%':name)
+argToLLVM :: TypeEnv -> Arg a -> LLVM.Arg
+argToLLVM env (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM env typ) (LLVM.Ident $ '%':name)

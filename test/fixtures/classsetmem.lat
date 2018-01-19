@@ -1,0 +1,10 @@
+class Foo {
+	int foo;
+}
+
+int main () {
+	Foo bar = new Foo;
+	bar.foo = 3;
+	printInt(bar.foo);
+	return 0;
+}

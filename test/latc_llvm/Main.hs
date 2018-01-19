@@ -60,6 +60,7 @@ testFiles = [
         "core020.lat",
         "core021.lat",
         "core022.lat",
+        --"list.lat", does not work
         "array001.lat",
         "array002.lat"
     ]        

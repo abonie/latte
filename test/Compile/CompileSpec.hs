@@ -66,7 +66,8 @@ testFiles = [
         ("core019.lat", success, "Accepts scope shenanigans"),
         ("core020.lat", success, "Accepts printInt and void function"),
         ("core021.lat", success, "Accepts no return in unreachable branch"),
-        ("core022.lat", success, "Accepts printIn")
+        ("core022.lat", success, "Accepts printIn"),
+        ("list.lat",    success, "Accepts structs")
     ]
 
 

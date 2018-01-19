@@ -1,0 +1,6 @@
+int main() {
+	int[] a = new int[13];
+	string b;
+	b = a.length;
+	return 0;
+}

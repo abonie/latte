@@ -47,20 +47,23 @@ testCases = [
     ("bad027.lat", isTypeMismatch pStr pInt, "throws"),
     ("badlen.lat", isTypeMismatch pStr pInt, "array length type"),
     ("badmem.lat", isOtherError, "calling length on non-array"),
-    ("goodlen.lat",    success, "array length type"),
-    ("goodblock5.lat", success, "accepts"),
-    ("goodblock4.lat", success, "accepts"),
-    ("goodblock3.lat", success, "accepts"),
-    ("goodblock2.lat", success, "accepts"),
-    ("goodblock.lat",  success, "accepts"),
-    --("goodcls.lat",    success, "accepts"), XXX TODO
-    ("goodfun.lat",    success, "accepts"),
-    ("printInt.lat",   success, "accepts builtin printInt"),
-    ("printStr.lat",   success, "accepts builtin printString"),
-    ("readInt.lat",    success, "accepts builtin readInt"),
-    ("readStr.lat",    success, "accepts builtin readString"),
-    ("array001.lat",   success, "accepts array001"),
-    ("array002.lat",   success, "accepts array002")
+    ("goodlen.lat",      success, "array length type"),
+    ("goodblock5.lat",   success, "accepts"),
+    ("goodblock4.lat",   success, "accepts"),
+    ("goodblock3.lat",   success, "accepts"),
+    ("goodblock2.lat",   success, "accepts"),
+    ("goodblock.lat",    success, "accepts"),
+    ("goodcls.lat",      success, "accepts basic class declaration and instantiation"),
+    ("null.lat",         success, "accepts null"),
+    ("classreadmem.lat", success, "accepts getting class member variable"),
+    ("classsetmem.lat",  success, "accepts setting class member variable"),
+    ("goodfun.lat",      success, "accepts"),
+    ("printInt.lat",     success, "accepts builtin printInt"),
+    ("printStr.lat",     success, "accepts builtin printString"),
+    ("readInt.lat",      success, "accepts builtin readInt"),
+    ("readStr.lat",      success, "accepts builtin readString"),
+    ("array001.lat",     success, "accepts array001"),
+    ("array002.lat",     success, "accepts array002")
     ]
 
 

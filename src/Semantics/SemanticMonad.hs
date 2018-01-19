@@ -6,53 +6,57 @@ import qualified Data.Map as Map
 import Control.Monad (when)
 import Control.Monad.Except
 import Control.Monad.State
-import Data.Maybe (fromJust)
+import Data.Maybe (fromJust, isJust)
 import Parsing.AbsLatte
 import Errors.LatteError
+import Utils (lookupNested)
 import Semantics.TypeError (typeMismatch, undeclaredVariable, multipleDeclarations, otherError)
 
--- TODO XXX: handling blocks by copying Env may be
---           inefficient in terms of memory usage
---
--- TODO: with this approach of copying Env for new
---       blocks, maintaining blockDepth variable
---       may be unnecessary
---
 
-type SymTable = Map.Map Ident (PType, Int)
+type SymTable = Map.Map Ident PType
 
-type TypeEnv = Map.Map Ident (Maybe Ident)
+-- Maps class name to name of the super class
+type TypeEnv = Map.Map Ident (Maybe Ident, [(Ident, PType)])
 
 data Env
     = Env {
-      blockDepth :: Int
-    , retType :: Maybe PType
+      retType :: Maybe PType
+    , clsName :: Maybe Ident
     , symTables :: [SymTable]
     , typeEnv :: TypeEnv
     }
 
-symTable :: Env -> SymTable
-symTable = head . symTables
-
-insert :: Ident -> (PType, Int) -> Env -> Env
-insert k v (Env d r (stab:rest) typ) = Env d r ((Map.insert k v stab):rest) typ
+insert :: Ident -> PType -> Env -> Env
+insert k v env = env { symTables = tabs } where
+    hd:tl = symTables env
+    tabs = (Map.insert k v hd):tl
 
 emptyEnv :: Env
-emptyEnv = Env 0 Nothing [Map.empty] Map.empty
+emptyEnv
+    = Env {
+      retType = Nothing
+    , clsName = Nothing
+    , symTables = [Map.empty]
+    , typeEnv = Map.empty
+    }
 
 
 class Monad m => MonadSemanticCheck m where
     raise :: LatteError PType -> m b
     typeof :: Ident -> PosInfo -> m PType
+    memberType :: Ident -> Ident -> PosInfo -> m PType
     declare :: PType -> Ident -> PosInfo -> m ()
     addClass :: Ident -> Maybe Ident -> PosInfo -> m ()
+    checkClass :: Ident -> PosInfo -> m ()
     matchTypes :: PType -> PType -> PosInfo -> m PType
     returnType :: m PType
+    enterClass :: Ident -> m ()
+    leaveClass :: m ()
     enterBlock :: m ()
     leaveBlock :: m ()
     enterFunction :: PType -> m ()
     leaveFunction :: m ()
-    runTypeCheck :: m a -> Either (LatteError PType) a
+    runTypeCheck :: m a -> Either (LatteError PType) (a, TypeEnv)
 
 
 type TCheck = ExceptT (LatteError PType) (State Env)
@@ -67,36 +71,63 @@ instance MonadSemanticCheck TCheck where
         when (t1' /= t2') (throwError $ typeMismatch t1 t2 pos)
         return t1
 
+    memberType cls mem pos = do
+        env <- gets $ Map.lookup cls . typeEnv
+        case env of
+            Nothing -> throwError $ otherError (Just $ "undeclared class " ++ (show cls)) pos  -- XXX
+            Just (_, members) -> do
+                let typ = lookup mem members
+                case typ of
+                    Nothing -> throwError $ undeclaredVariable mem pos  -- XXX
+                    Just t -> return t
+
     typeof var pos = do
-        maybeType <- gets $ (Map.lookup var) . symTable
-        case maybeType of
+        tabs <- gets symTables
+        case lookupNested var tabs of
             Nothing -> throwError $ undeclaredVariable var pos
-            Just (t, _) -> return t
+            Just t -> return t
 
     declare typ var pos = do
         when (rmpos typ == pVoid) (throwError $ otherError (Just "illegal variable type: void") pos)
-        tab <- gets symTable
-        depth <- gets blockDepth
-        when (Map.member var tab && snd (tab Map.! var) == depth)
-             (throwError $ multipleDeclarations var pos)
-        modify $ insert var (typ, depth)
+        cls <- gets clsName
+        case cls of
+            Nothing -> do
+                tab <- gets $ head . symTables
+                when (Map.member var tab) (throwError $ multipleDeclarations var pos)
+                modify $ insert var typ
+            Just cname -> do
+                tenv <- gets typeEnv
+                let Just (super, members) = Map.lookup cname tenv
+                when (member var members) (throwError $ multipleDeclarations var pos)
+                modify $ \s -> s { typeEnv = Map.insert cname (super, (var, typ):members) tenv }
+      where
+        member x = any ((==x).fst)
 
     addClass ident super pos = do
         tenv <- gets typeEnv
         when (Map.member ident tenv) (throwError $ multipleDeclarations ident pos)
         -- TODO XXX check if super exists and there is no cycle
-        modify $ \s -> s { typeEnv = Map.insert ident super tenv }
+        modify $ \s -> s { typeEnv = Map.insert ident (super, []) tenv }
+
+    checkClass ident pos = do
+        tenv <- gets $ Map.lookup ident . typeEnv
+        case tenv of
+            Nothing -> throwError $ otherError (Just "undeclared class") pos -- XXX
+            Just _ -> return ()
+
+    enterClass ident = do
+        modify $ \s -> s { clsName = Just ident }
+
+    leaveClass = do
+        modify $ \s -> s { clsName = Nothing }
 
     enterBlock = do
-        depth <- gets blockDepth
-        (h:t) <- gets symTables
-        modify $ \s -> s { blockDepth = depth+1, symTables = (h:h:t) }
+        tabs <- gets symTables
+        modify $ \s -> s { symTables = Map.empty:tabs }
 
     leaveBlock = do
-        depth <- gets blockDepth
         (_:t) <- gets symTables
-        when (depth == 0) (throwError $ otherError Nothing nopos) -- XXX
-        modify $ \s -> s { blockDepth = depth-1, symTables = t }
+        modify $ \s -> s { symTables = t }
 
     returnType = gets $ fromJust . retType
 
@@ -108,4 +139,5 @@ instance MonadSemanticCheck TCheck where
         leaveBlock
         modify $ \s -> s { retType = Nothing }
 
-    runTypeCheck tc = evalState (runExceptT tc) emptyEnv
+    runTypeCheck tc = let (ast, env) = runState (runExceptT tc) emptyEnv in
+        ast >>= \x -> return (x, typeEnv env)
