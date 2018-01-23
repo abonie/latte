@@ -9,7 +9,6 @@ import Parsing (parse)
 import Parsing.ErrM (Err(..))
 import Semantics.TypeCheck (typeCheck)
 import Compile.CodeGen (compile)
-import LLVM.Printer (printTree)
 
 
 main :: IO ()

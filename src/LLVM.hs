@@ -1,5 +1,5 @@
 module LLVM (
-    printTree,
+    printModule,
     Module(..),
     Ident(..),
     TopDef(..),

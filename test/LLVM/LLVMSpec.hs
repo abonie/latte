@@ -2,11 +2,6 @@ module LLVM.LLVMSpec where
 import Test.Hspec
 import LLVM
 
--- TODO
---
-
-printModule = printTree
-
 
 spec :: Spec
 spec = do

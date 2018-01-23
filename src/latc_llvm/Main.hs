@@ -9,7 +9,7 @@ import Parsing (parse)
 import Parsing.ErrM (Err(..))
 import Semantics.TypeCheck (typeCheck)
 import Compile.CodeGen (compile)
-import LLVM.Printer (printTree)
+import LLVM.Printer (printModule)
 
 
 main :: IO ()
@@ -19,7 +19,7 @@ main = do
     let path = head args
     f <- readFile path
     case parse f >>= typeCheck >>= compile of
-        Right llvm -> buildLLVM (printTree llvm) path
+        Right llvm -> buildLLVM (printModule llvm) path
         Left err -> die (show err) 2
 
 

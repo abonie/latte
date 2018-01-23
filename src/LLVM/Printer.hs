@@ -3,8 +3,6 @@ import LLVM.AST
 import Data.List (intercalate)
 
 
-printTree = printModule
-
 printModule :: Module -> String
 printModule (Module defs) = unlines $ map printTopDef defs
 
