@@ -43,11 +43,13 @@ emptyEnv
 
 class Monad m => MonadSemanticCheck m where
     raise :: LatteError PType -> m b
-    typeof :: Ident -> PosInfo -> m PType
+    varType :: Ident -> PosInfo -> m PType
     memberType :: Ident -> Ident -> PosInfo -> m PType
     declare :: PType -> Ident -> PosInfo -> m ()
     addClass :: Ident -> Maybe Ident -> PosInfo -> m ()
     checkClass :: Ident -> PosInfo -> m ()
+    className :: PType -> PosInfo -> m Ident
+    elemType :: PType -> PosInfo -> m PType
     matchTypes :: PType -> PType -> PosInfo -> m PType
     returnType :: m PType
     enterClass :: Ident -> m ()
@@ -74,14 +76,14 @@ instance MonadSemanticCheck TCheck where
     memberType cls mem pos = do
         env <- gets $ Map.lookup cls . typeEnv
         case env of
-            Nothing -> throwError $ otherError (Just $ "undeclared class " ++ (show cls)) pos  -- XXX
+            Nothing -> throwError $ otherError (Just $ "undeclared class " ++ (show cls)) pos
             Just (_, members) -> do
                 let typ = lookup mem members
                 case typ of
-                    Nothing -> throwError $ undeclaredVariable mem pos  -- XXX
+                    Nothing -> throwError $ undeclaredVariable mem pos
                     Just t -> return t
 
-    typeof var pos = do
+    varType var pos = do
         tabs <- gets symTables
         case lookupNested var tabs of
             Nothing -> throwError $ undeclaredVariable var pos
@@ -106,14 +108,22 @@ instance MonadSemanticCheck TCheck where
     addClass ident super pos = do
         tenv <- gets typeEnv
         when (Map.member ident tenv) (throwError $ multipleDeclarations ident pos)
-        -- TODO XXX check if super exists and there is no cycle
+        -- TODO check if super exists and there is no cycle
         modify $ \s -> s { typeEnv = Map.insert ident (super, []) tenv }
 
     checkClass ident pos = do
         tenv <- gets $ Map.lookup ident . typeEnv
         case tenv of
-            Nothing -> throwError $ otherError (Just "undeclared class") pos -- XXX
+            Nothing -> throwError $ otherError (Just "undeclared class") pos
             Just _ -> return ()
+
+    className typ pos = case typ of
+        TCls _ cls -> return cls
+        _ -> raise $ otherError (Just "expected an object type") pos
+
+    elemType typ pos = case typ of
+        Arr _ elem -> return elem
+        _ -> raise $ otherError (Just "expected an array type") pos
 
     enterClass ident = do
         modify $ \s -> s { clsName = Just ident }

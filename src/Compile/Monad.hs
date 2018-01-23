@@ -21,7 +21,7 @@ class Monad m => MonadCodeGen m where
     getNamedType :: LLVM.Ident -> m LLVM.Type
     addStr :: String -> LLVM.Ident -> m LLVM.Operand
     callStrlen :: LLVM.Operand -> m LLVM.Operand
-    addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
+    addVar :: Type (PosInfo, TypeInfo) -> Ident -> m ()
     setVar :: Ident -> LLVM.Operand -> m ()
     getVar :: Ident -> m LLVM.Operand
     getVarType :: Ident -> m (Type (PosInfo, TypeInfo))
@@ -31,19 +31,10 @@ class Monad m => MonadCodeGen m where
     endFunction :: m ()
     setLabel :: LLVM.Ident -> m ()
     currentLabel :: m LLVM.Ident
-    convertType :: Type a -> m LLVM.Type
     runGen :: TypeEnv -> m () -> Either (LatteError PType) LLVM.Module
 
 
 type LLGen = ExceptT (LatteError PType) (State Env)
-
-
---data BlockState
---    = BlockState {
---      label :: LLVM.Ident
---    , instrs :: [LLVM.Instr]
---    , term :: Maybe LLVM.Instr
---    }
 
 
 data Env
@@ -58,7 +49,6 @@ data Env
     , typeEnv :: TypeEnv
     }
 
--- XXX copied over
 type TypeEnv = Map.Map Ident (Maybe Ident, [(Ident, PType)])
 
 type VarEnv = Map.Map Ident (LLVM.Operand, Type (PosInfo, TypeInfo))
@@ -120,9 +110,9 @@ instance MonadCodeGen LLGen where
         addDecl $ LLVM.ConstDef globname atype (LLVM.Str str)
         return $ LLVM.ConstOperand $ LLVM.Global (LLVM.Ptr atype) globname
 
-    addVar typ ident _ = do  -- TODO blank: _
+    addVar typ ident = do
         r <- newReg
-        typ' <- convertType typ
+        let typ' = typeToLLVM typ
         emit $ LLVM.Alloc r typ'
         (vs:tl) <- gets vars
         modify $ \s -> s { vars = (Map.insert ident ((LLVM.Reg typ' r), typ) vs):tl }
@@ -168,8 +158,8 @@ instance MonadCodeGen LLGen where
         newScope
         modify $ \s -> s { scope = fname }
         forM_ args (\(Arg (pos,_) typ ident@(Ident name)) -> do
-            addVar typ ident pos
-            typ' <- convertType typ
+            addVar typ ident
+            let typ' = typeToLLVM typ
             setVar ident (LLVM.Reg typ' $ LLVM.Ident $ '%':name) )
         modify $ \s -> s { signs = fenv' }
 
@@ -201,9 +191,6 @@ instance MonadCodeGen LLGen where
     currentLabel = do
         l <- gets label
         return l
-
-    -- TODO redundant
-    convertType typ = return $ typeToLLVM typ
 
     runGen te llgen = let (res, state) = runState (runExceptT llgen) (newEnv te) in
         either Left (const $ Right $ envToModule state) res

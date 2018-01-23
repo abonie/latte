@@ -48,8 +48,14 @@ globDecls = [
     
 genProg :: Program (PosInfo, TypeInfo) -> LLGen ()
 genProg (Program _ defs) = do
+    tenv <- gets typeEnv
+    mapM_ addClass $ Map.toList tenv
     mapM_ addDecl globDecls
     mapM_ genTopDef defs
+  where
+    addClass ((Ident name), (_, members)) = addDecl $
+        LLVM.TypeDef (LLVM.Ident $ "%struct." ++ name)
+                     (LLVM.Struct $ map (typeToLLVM . snd) members)
 
 
 genTopDef :: TopDef (PosInfo, TypeInfo) -> LLGen ()
@@ -58,12 +64,7 @@ genTopDef (FnDef _ (FunDef _ retType fname args body@(Block _ stmts))) = do
     mapM_ genStmt stmts
     endFunction
 
-genTopDef (ClsDef _ ident@(Ident name) _ _) = do
-    -- TODO
-    tenv <- gets typeEnv
-    let Just (_, members) = Map.lookup ident tenv
-    let types = map (typeToLLVM . snd) members
-    addDecl $ LLVM.TypeDef (LLVM.Ident $ "%struct." ++ name) (LLVM.Struct types)
+genTopDef (ClsDef _ _ _ _) = return ()
 
 
 genBlock :: Block (PosInfo, TypeInfo) -> LLGen ()
@@ -80,16 +81,16 @@ genStmt (BStmt _ block) = genBlock block
 
 genStmt (Decl _ typ items) = forM_ items (\case
         NoInit info ident -> do
-            addVar typ ident (fst info)
+            addVar typ ident
             case typ of
-                -- TODO
                 Str _ -> genStmt $ Ass info (LVar info ident) (EString (nopos, Nothing) "")
                 Int _ -> genStmt $ Ass info (LVar info ident) (ELitInt (nopos, Nothing) 0)
                 Bool _ -> genStmt $ Ass info (LVar info ident) (ELitFalse (nopos, Nothing))
+                -- TODO default initialization for other types?
                 _ -> return ()
         Init info ident expr -> do
             x <- genExpr expr
-            addVar typ ident (fst info)
+            addVar typ ident
             setVar ident x )
 
 genStmt (Ass _ (LVar _ ident) expr) = do
@@ -97,10 +98,9 @@ genStmt (Ass _ (LVar _ ident) expr) = do
     setVar ident x
 
 genStmt (Ass _ (LInd (_, Just typ) arrExpr indExpr) expr) = do
-    -- TODO boilerplate?
-    -- XXX bounds checking
     ind <- genExpr indExpr
     struct <- genExpr arrExpr
+    checkBounds struct ind
     arr <- extractvalue 0 struct
     ptr <- getelementptr arr ind
     val <- genExpr expr
@@ -116,7 +116,6 @@ genStmt (Ass _ (LMem (_, Just typ) objExpr mem) expr) = do
     struct <- insertvalue struct x $ LLVM.litI64 $ toInteger $ findIndex members
     store struct ptr
   where
-    -- TODO XXX extract this logic
     findIndex l = fromJust $ elemIndex mem $ map fst l
 
 genStmt (Incr _ (LVar _ ident)) = do
@@ -131,13 +130,12 @@ genStmt (Decr _ (LVar _ ident)) = do
 
 genStmt (Ret _ expr) = do
     x <- genExpr expr
-    t <- convertType $ typeOf expr
+    let t = typeToLLVM $ typeOf expr
     emit $ LLVM.Ret t x
 
 genStmt (VRet _) = do
     emit $ LLVM.VRet
 
--- TODO create explicit representation for basic blocks
 genStmt (Cond _ expr stmt) = do
     x <- genExpr expr
     ltrue <- newLabel
@@ -190,7 +188,7 @@ genStmt (For (pos, _) typ ident expr stmt) = do
     elem <- getelementptr arr i >>= load
     iinc <- add i (LLVM.litI64 1)
     newScope
-    addVar typ ident pos
+    addVar typ ident
     setVar ident elem
     genStmt stmt
     endScope
@@ -210,29 +208,26 @@ genExpr (EVar _ ident) = do
     getVar ident
 
 genExpr (EMem _ objExpr mem) = do
-    struct <- genExpr objExpr
+    ptr <- genExpr objExpr
     case typeOf objExpr of
-        -- XXX assume mem is `length` because otherwise this would not pass through type checking
-        Arr _ _ -> extractvalue 1 struct
+        Arr _ _ -> extractvalue 1 ptr
         TCls _ cls -> do
             tenv <- gets typeEnv
-            case Map.lookup cls tenv of
-                Nothing -> error "not gonna happen?" -- XXX
-                Just (_, members) -> do
-                    -- TODO rename struct
-                    struct' <- load struct
-                    extractvalue (findIndex members) struct'
+            let Just (_, members) = Map.lookup cls tenv
+            struct <- load ptr
+            extractvalue (findIndex members) struct
   where
     findIndex l = fromJust $ elemIndex mem $ map fst l
 
 genExpr (EInd _ arrExpr indExpr) = do
     ind <- genExpr indExpr
     struct <- genExpr arrExpr
+    checkBounds struct ind
     arr <- extractvalue 0 struct
     getelementptr arr ind >>= load
 
-genExpr (ENew _ typ) = do
-    LLVM.Ptr typ@(LLVM.NamedType name) <- convertType typ
+genExpr (ENew _ clstyp) = do
+    let LLVM.Ptr typ@(LLVM.NamedType name) = typeToLLVM clstyp
     structType <- getNamedType name
     Just ptrI8 <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [LLVM.litI64 $ sizeof structType]
     ptr <- bitcast ptrI8 $ LLVM.Ptr typ
@@ -240,7 +235,7 @@ genExpr (ENew _ typ) = do
     return ptr
 
 genExpr (ENull _ ident) = do
-    typ <- convertType $ TCls nopos ident
+    let typ = typeToLLVM $ TCls nopos ident
     return $ LLVM.ConstOperand $ LLVM.Null $ LLVM.Ptr typ
 
 genExpr (ELitTrue _) = return $ LLVM.litI1 1
@@ -261,7 +256,6 @@ genExpr (EAdd (_, Just typ) expr1 op expr2) = case typ of
         x2 <- genExpr expr2
         genBinop (addOp2LLVM op) x1 x2
     Str _ -> do
-        -- TODO check if operator is Add ? type checking ensures that
         x1 <- genExpr expr1
         x2 <- genExpr expr2
         l1 <- callStrlen x1
@@ -331,23 +325,39 @@ genExpr (EOr _ expr1 expr2) = do
 
 genExpr (EArr _ t expr) = do
     len <- genExpr expr
-    elemType <- convertType t
+    let elemType = typeToLLVM t
     size <- mul len $ LLVM.litI64 $ sizeof elemType
     Just arr <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [size]
-    -- TODO bitcast
     ptr <- bitcast arr $ LLVM.Ptr elemType
     tmp <- insertvalue (LLVM.ConstOperand (LLVM.Undef $ LLVM.Struct [LLVM.Ptr elemType, LLVM.i64])) ptr $ LLVM.litI64 0
     insertvalue tmp len $ LLVM.litI64 1
-    -- TODO default initialization?
 
 genExpr (EApp (_, Just typ) (Ident fname) args) = do
     argValues <- mapM genExpr args
-    lltype <- convertType typ
+    let lltype = typeToLLVM typ
     let llid = LLVM.Ident ('@':fname)
     maybeRet <- call lltype llid argValues
     case maybeRet of
         Nothing -> return $ LLVM.ConstOperand $ LLVM.Undef LLVM.Void
         Just ret -> return ret
+
+
+checkBounds :: LLVM.Operand -> LLVM.Operand -> LLGen ()
+checkBounds arrayStruct index = do
+    lcurrent <- currentLabel
+    lelse <- newLabel
+    lerror <- newLabel
+    lok <- newLabel
+    c1 <- cmp LLVM.Lt index $ LLVM.litI64 0
+    cbr c1 lerror lelse
+    setLabel lelse
+    len <- extractvalue 1 arrayStruct
+    c2 <- cmp LLVM.Ge index len
+    cbr c2 lerror lok
+    setLabel lerror
+    _ <- call LLVM.Void (LLVM.Ident "@error") []
+    br lok -- TODO unreachable
+    setLabel lok
 
 
 genBinop :: LLVM.Binop -> LLVM.Operand -> LLVM.Operand -> LLGen LLVM.Operand
@@ -452,10 +462,9 @@ bitcast val typ = do
     return $ LLVM.Reg typ r
 
 
--- TODO XXX
 sizeof :: LLVM.Type -> Integer
 sizeof (LLVM.I 1) = 1
-sizeof (LLVM.I n) = toInteger (n `div` 8)  -- XXX
+sizeof (LLVM.I n) = toInteger (n `div` 8)
 sizeof (LLVM.Ptr _) = 8
 sizeof (LLVM.Struct types) = foldl (+) 0 $ map sizeof types
 

@@ -29,6 +29,7 @@ main = do
                     putStrLn out
                     putStrLn "    expected:"
                     putStrLn should
+                _ | out == should && take 2 fname == "RE" -> putStrLn "  OK(runtime error)"
                 _ -> putStrLn $ "  FAIL lli: " ++ err
         else putStrLn $ "  FAIL: " ++ err
         callCommand $ "rm -f " ++ combine here "*.lat"
@@ -64,7 +65,9 @@ testFiles = [
         "array001.lat",
         "array002.lat",
         "boolarray.lat",
-        "2d.lat"
+        "2d.lat",
+        "REboundslow.lat",
+        "REboundshigh.lat"
     ]        
 
 

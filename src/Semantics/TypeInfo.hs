@@ -17,7 +17,6 @@ class Typeable a where
     typeOf :: a -> PType
 
 
--- XXX non-exhaustive rethink TypeInfo and/or typeOf
 instance Typeable TypeInfo where
     typeOf (Just t) = t
 
