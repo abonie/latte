@@ -26,10 +26,10 @@ testCases = [
     ("bad002.lat", not.ok, "fails on toplevel variable"),
     ("bad004.lat", not.ok, "fails on unmatched parens"),
     ("bad005.lat", not.ok, "fails on invalid function declaration"),
-    ("counter.lat", ok, "succeeds on class definition"),
+    --("counter.lat", ok, "succeeds on class definition"),
     ("list.lat", ok, "succeeds with structs"),
-    ("linked.lat", ok, "succeeds on class definition with methods and nulls"),
-    ("points.lat", ok, "succeeds on class definition with inheritance"),
+    --("linked.lat", ok, "succeeds on class definition with methods and nulls"),
+    --("points.lat", ok, "succeeds on class definition with inheritance"),
     ("array001.lat", ok, "succeeds on int array (declaration and setting of elements)"),
     ("array002.lat", ok, "succeeds on advanced int array usage")]
 

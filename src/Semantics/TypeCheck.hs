@@ -101,6 +101,29 @@ checkItem typ (Init pos ident expr) = do
     return $ Init (pos, Just typ) ident expr'
 
 
+checkLVal :: LVal PosInfo -> TCheck (PType, LVal (PosInfo, TypeInfo))
+checkLVal (LVar pos ident) = do
+    typ <- typeof ident pos
+    return (typ, LVar (pos, Just typ) ident)
+
+checkLVal (LMem pos objExpr mem) = do
+    (objType, objExpr') <- checkExpr objExpr
+    -- TODO match type with cls
+    case objType of
+        TCls _ cls -> do
+            typ <- memberType cls mem pos
+            return (typ, LMem (pos, Just typ) objExpr' mem)
+        _ -> raise $ otherError (Just "expected an object") pos
+
+checkLVal (LInd pos arrExpr indExpr) = do
+    (indType, indExpr') <- checkExpr indExpr
+    matchTypes indType pInt pos
+    (arrType, arrExpr') <- checkExpr arrExpr
+    case arrType of
+        Arr _ elemType -> return (elemType, LInd (pos, Just elemType) arrExpr' indExpr')
+        _ -> raise $ otherError (Just "expected an array") pos
+
+
 checkStmt :: PStmt -> TCheck (Stmt (PosInfo, TypeInfo))
 checkStmt (Empty pos) = return $ Empty (pos, Nothing)
 
@@ -112,55 +135,21 @@ checkStmt (Decl pos typ items) = do
     items' <- mapM (checkItem typ) items
     return $ Decl (pos, Just typ) (settype typ typ) items'
 
-checkStmt (Ass pos (LhsVar posv ident) expr) = do
+checkStmt (Ass pos lhs expr) = do
+    (lhsType, lhs') <- checkLVal lhs
     (exprType, expr') <- checkExpr expr
-    varType <- typeof ident pos
-    void $ matchTypes varType exprType pos
-    return $ Ass (pos, Nothing) (LhsVar (posv, Just varType) ident) expr'
+    matchTypes lhsType exprType pos
+    return $ Ass (pos, Nothing) lhs' expr'
 
-checkStmt (Ass pos (LhsInd posi ident indExpr) expr) = do
-    (indType, indExpr') <- checkExpr indExpr
-    matchTypes indType pInt posi
-    -- TODO XXX check bounds ?
-    (exprType, expr') <- checkExpr expr
-    varType <- typeof ident pos
-    matchTypes varType (Arr nopos exprType) pos
-    return $ Ass (pos, Nothing) (LhsInd (posi, Just exprType) ident indExpr') expr'
+checkStmt (Incr pos lhs) = do
+    (lhsType, lhs') <- checkLVal lhs
+    matchTypes lhsType pInt pos
+    return $ Incr (pos, Nothing) lhs'
 
-checkStmt (Ass pos (LhsMem posm obj mem) expr) = do
-    (exprType, expr') <- checkExpr expr
-    clsType <- typeof obj pos
-    case clsType of
-        TCls _ clsName -> do
-            t <- memberType clsName mem pos
-            matchTypes t exprType pos
-            return $ Ass (pos, Nothing) (LhsMem (posm, Just t) obj mem) expr'
-        _ -> raise $ otherError (Just "expected an object") pos
-
-checkStmt (Incr pos (LhsVar posv ident)) = do
-    varType <- typeof ident pos
-    void $ matchTypes varType pInt pos
-    return $ Incr (pos, Nothing) (LhsVar (posv, Just varType) ident)
-
-checkStmt (Incr pos (LhsInd posi ident expr)) = do
-    (exprType, expr') <- checkExpr expr
-    matchTypes exprType pInt posi
-    varType <- typeof ident pos
-    matchTypes varType (Arr nopos pInt) pos
-    return $ Incr (pos, Nothing) (LhsInd (posi, Just varType) ident expr')
-
--- XXX boiler
-checkStmt (Decr pos (LhsVar posv ident)) = do
-    varType <- typeof ident pos
-    void $ matchTypes varType pInt pos
-    return $ Decr (pos, Nothing) (LhsVar (posv, Just varType) ident)
-
-checkStmt (Decr pos (LhsInd posi ident expr)) = do
-    (exprType, expr') <- checkExpr expr
-    matchTypes exprType pInt posi
-    varType <- typeof ident pos
-    matchTypes varType (Arr nopos pInt) pos
-    return $ Decr (pos, Nothing) (LhsInd (posi, Just varType) ident expr')
+checkStmt (Decr pos lhs) = do
+    (lhsType, lhs') <- checkLVal lhs
+    matchTypes lhsType pInt pos
+    return $ Decr (pos, Nothing) lhs'
 
 checkStmt (Ret pos expr) = do
     (exprType, expr') <- checkExpr expr
@@ -220,29 +209,32 @@ checkExpr (EVar pos ident) = do
     varType <- typeof ident pos
     return (varType, EVar (pos, Just varType) ident)
 
-checkExpr (EMem pos ident mem) = do
-    varType <- typeof ident pos
+checkExpr (EMem pos objExpr mem) = do
+    (objType, objExpr') <- checkExpr objExpr
     -- TODO XXX boilerplate - check if type is an array of something
-    case (varType, mem) of
-        (Arr _ typ, Ident "length") -> return (pInt, EMem (pos, Just pInt) ident mem)
+    case (objType, mem) of
+        (Arr _ typ, Ident "length") -> return (pInt, EMem (pos, Just pInt) objExpr' mem)
         (TCls _ cls, _) -> do
             memType <- memberType cls mem pos
-            return (memType, EMem (pos, Just memType) ident mem)
+            return (memType, EMem (pos, Just memType) objExpr' mem)
         _ -> raise $ otherError (Just "expected array type") pos  -- XXX
 
-checkExpr (EInd pos ident expr) = do
-    (exprType, expr') <- checkExpr expr
-    matchTypes exprType pInt pos
-    varType <- typeof ident pos
+checkExpr (EInd pos arrExpr indExpr) = do
+    (indType, indExpr') <- checkExpr indExpr
+    matchTypes indType pInt pos
+    (arrType, arrExpr') <- checkExpr arrExpr
     -- TODO XXX Check if type matches (Arr _ something) !!!
-    case varType of
-        Arr _ typ -> return (typ, EInd (pos, Just typ) ident expr')
+    case arrType of
+        Arr _ typ -> return (typ, EInd (pos, Just typ) arrExpr' indExpr')
         _ -> raise $ otherError (Just "expected array type") pos  -- XXX
 
-checkExpr (ENew pos ident) = do
-    checkClass ident pos
-    let typ = TCls nopos ident
-    return (typ, ENew (pos, Just typ) ident)
+checkExpr (ENew pos typ) = do
+    -- TODO XXX Check if type matches (TCls _ _) !!!
+    case typ of
+        TCls _ ident -> do
+            checkClass ident pos
+            return (typ, ENew (pos, Just typ) (mapnovars typ))
+        _ -> raise $ otherError (Just "expected a class name") pos
 
 checkExpr (ENull pos ident) = do
     checkClass ident pos
@@ -309,9 +301,9 @@ checkExpr (EOr pos expr1 expr2) = do
     return (t2, EOr (pos, Just t2) expr1' expr2')
 
 checkExpr (EArr pos typ expr) = do
-    (typExpr, expr') <- checkExpr expr
-    matchTypes typExpr typ pos
-    return (Arr nopos typExpr, EArr (pos, Just typExpr) (mapnovars typ) expr')
+    (exprType, expr') <- checkExpr expr
+    matchTypes exprType pInt pos
+    return (Arr nopos typ, EArr (pos, Just typ) (mapnovars typ) expr')
 
 checkExpr (EApp pos fident args) = do
     ftype@(Fun _ ret _) <- typeof fident pos

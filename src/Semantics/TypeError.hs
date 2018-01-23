@@ -19,10 +19,11 @@ x <+> y = x ++ " " ++ y
 pType :: Type a -> String
 pType (Int _) = "int"
 pType (Str _) = "str"
-pType (Bool _) = "bool"
+pType (Bool _) = "boolean"
 pType (Void _) = "void"
 pType (Fun _ r a) = (pType r) ++ "(" ++ (concat (intersperse "," (map pType a))) ++ ")"
 pType (Arr _ t) = (pType t) ++ "[]"
+pType (TCls _ (Ident name)) = name
 
 
 pPos :: PosInfo -> String

@@ -83,51 +83,48 @@ genStmt (Decl _ typ items) = forM_ items (\case
             addVar typ ident (fst info)
             case typ of
                 -- TODO
-                Str _ -> genStmt $ Ass info (LhsVar info ident) (EString (nopos, Nothing) "")
-                Int _ -> genStmt $ Ass info (LhsVar info ident) (ELitInt (nopos, Nothing) 0)
-                Bool _ -> genStmt $ Ass info (LhsVar info ident) (ELitFalse (nopos, Nothing))
+                Str _ -> genStmt $ Ass info (LVar info ident) (EString (nopos, Nothing) "")
+                Int _ -> genStmt $ Ass info (LVar info ident) (ELitInt (nopos, Nothing) 0)
+                Bool _ -> genStmt $ Ass info (LVar info ident) (ELitFalse (nopos, Nothing))
                 _ -> return ()
         Init info ident expr -> do
             x <- genExpr expr
             addVar typ ident (fst info)
             setVar ident x )
 
-genStmt (Ass _ (LhsVar _ ident) expr) = do
+genStmt (Ass _ (LVar _ ident) expr) = do
     x <- genExpr expr
     setVar ident x
 
-genStmt (Ass _ (LhsInd (_, Just typ) arrIdent indExpr) expr) = do
+genStmt (Ass _ (LInd (_, Just typ) arrExpr indExpr) expr) = do
     -- TODO boilerplate?
     -- XXX bounds checking
     ind <- genExpr indExpr
-    struct <- getVar arrIdent
+    struct <- genExpr arrExpr
     arr <- extractvalue 0 struct
     ptr <- getelementptr arr ind
     val <- genExpr expr
-    --elemType <- convertType typ
-    --emit $ LLVM.Store elemType val ptr
     store val ptr
 
-genStmt (Ass _ (LhsMem (_, Just typ) obj mem) expr) = do
+genStmt (Ass _ (LMem (_, Just typ) objExpr mem) expr) = do
     x <- genExpr expr
-    TCls _ cls <- getVarType obj
-    ptr <- getVar obj
-    var <- load ptr
+    ptr <- genExpr objExpr
+    let TCls _ cls = typeOf objExpr
+    struct <- load ptr
     tenv <- gets typeEnv
     let Just (_, members) = Map.lookup cls tenv
-    struct <- insertvalue var x $ LLVM.litI64 $ toInteger $ findIndex members
+    struct <- insertvalue struct x $ LLVM.litI64 $ toInteger $ findIndex members
     store struct ptr
-    --emit $ LLVM.Store struct ptr
   where
     -- TODO XXX extract this logic
     findIndex l = fromJust $ elemIndex mem $ map fst l
 
-genStmt (Incr _ (LhsVar _ ident)) = do
+genStmt (Incr _ (LVar _ ident)) = do
     val <- getVar ident
     r <- add val $ LLVM.litI64 1
     setVar ident r
 
-genStmt (Decr _ (LhsVar _ ident)) = do
+genStmt (Decr _ (LVar _ ident)) = do
     val <- getVar ident
     r <- sub val $ LLVM.litI64 1
     setVar ident r
@@ -212,10 +209,9 @@ genExpr :: Expr (PosInfo, TypeInfo) -> LLGen LLVM.Operand
 genExpr (EVar _ ident) = do
     getVar ident
 
-genExpr (EMem _ ident mem) = do
-    typ <- getVarType ident
-    struct <- getVar ident
-    case typ of
+genExpr (EMem _ objExpr mem) = do
+    struct <- genExpr objExpr
+    case typeOf objExpr of
         -- XXX assume mem is `length` because otherwise this would not pass through type checking
         Arr _ _ -> extractvalue 1 struct
         TCls _ cls -> do
@@ -229,14 +225,14 @@ genExpr (EMem _ ident mem) = do
   where
     findIndex l = fromJust $ elemIndex mem $ map fst l
 
-genExpr (EInd _ ident expr) = do
-    ind <- genExpr expr
-    struct <- getVar ident
+genExpr (EInd _ arrExpr indExpr) = do
+    ind <- genExpr indExpr
+    struct <- genExpr arrExpr
     arr <- extractvalue 0 struct
     getelementptr arr ind >>= load
 
-genExpr (ENew _ ident) = do
-    LLVM.Ptr typ@(LLVM.NamedType name) <- convertType $ TCls nopos ident
+genExpr (ENew _ typ) = do
+    LLVM.Ptr typ@(LLVM.NamedType name) <- convertType typ
     structType <- getNamedType name
     Just ptrI8 <- call (LLVM.Ptr LLVM.i8) (LLVM.Ident "@malloc") [LLVM.litI64 $ sizeof structType]
     ptr <- bitcast ptrI8 $ LLVM.Ptr typ
@@ -458,6 +454,7 @@ bitcast val typ = do
 
 -- TODO XXX
 sizeof :: LLVM.Type -> Integer
+sizeof (LLVM.I 1) = 1
 sizeof (LLVM.I n) = toInteger (n `div` 8)  -- XXX
 sizeof (LLVM.Ptr _) = 8
 sizeof (LLVM.Struct types) = foldl (+) 0 $ map sizeof types

@@ -214,13 +214,13 @@ Stmt :: {
 | Type ListItem ';' {
   (fst $1, AbsLatte.Decl (fst $1)(snd $1)(snd $2)) 
 }
-| LHS '=' Expr ';' {
+| LVal '=' Expr ';' {
   (fst $1, AbsLatte.Ass (fst $1)(snd $1)(snd $3)) 
 }
-| LHS '++' ';' {
+| LVal '++' ';' {
   (fst $1, AbsLatte.Incr (fst $1)(snd $1)) 
 }
-| LHS '--' ';' {
+| LVal '--' ';' {
   (fst $1, AbsLatte.Decr (fst $1)(snd $1)) 
 }
 | 'return' Expr ';' {
@@ -265,17 +265,17 @@ ListItem :: {
   (fst $1, (:) (snd $1)(snd $3)) 
 }
 
-LHS :: {
-  (Maybe (Int, Int), LHS (Maybe (Int, Int)))
+LVal :: {
+  (Maybe (Int, Int), LVal (Maybe (Int, Int)))
 }
 : Ident {
-  (fst $1, AbsLatte.LhsVar (fst $1)(snd $1)) 
+  (fst $1, AbsLatte.LVar (fst $1)(snd $1)) 
 }
-| Ident '.' Ident {
-  (fst $1, AbsLatte.LhsMem (fst $1)(snd $1)(snd $3)) 
+| Expr6 '.' Ident {
+  (fst $1, AbsLatte.LMem (fst $1)(snd $1)(snd $3)) 
 }
-| Ident '[' Expr ']' {
-  (fst $1, AbsLatte.LhsInd (fst $1)(snd $1)(snd $3)) 
+| Expr6 '[' Expr ']' {
+  (fst $1, AbsLatte.LInd (fst $1)(snd $1)(snd $3)) 
 }
 
 Type :: {
@@ -313,17 +313,24 @@ ListType :: {
   (fst $1, (:) (snd $1)(snd $3)) 
 }
 
+Expr7 :: {
+  (Maybe (Int, Int), Expr (Maybe (Int, Int)))
+}
+: Expr6 '.' Ident {
+  (fst $1, AbsLatte.EMem (fst $1)(snd $1)(snd $3)) 
+}
+| Expr6 '[' Expr ']' {
+  (fst $1, AbsLatte.EInd (fst $1)(snd $1)(snd $3)) 
+}
+| '(' Expr ')' {
+  (Just (tokenLineCol $1), snd $2)
+}
+
 Expr6 :: {
   (Maybe (Int, Int), Expr (Maybe (Int, Int)))
 }
 : Ident {
   (fst $1, AbsLatte.EVar (fst $1)(snd $1)) 
-}
-| Ident '.' Ident {
-  (fst $1, AbsLatte.EMem (fst $1)(snd $1)(snd $3)) 
-}
-| Ident '[' Expr ']' {
-  (fst $1, AbsLatte.EInd (fst $1)(snd $1)(snd $3)) 
 }
 | Integer {
   (fst $1, AbsLatte.ELitInt (fst $1)(snd $1)) 
@@ -334,7 +341,7 @@ Expr6 :: {
 | 'false' {
   (Just (tokenLineCol $1), AbsLatte.ELitFalse (Just (tokenLineCol $1)))
 }
-| 'new' Ident {
+| 'new' Type {
   (Just (tokenLineCol $1), AbsLatte.ENew (Just (tokenLineCol $1)) (snd $2)) 
 }
 | '(' Ident ')' 'null' {
@@ -346,14 +353,11 @@ Expr6 :: {
 | Ident '(' ListExpr ')' {
   (fst $1, AbsLatte.EApp (fst $1)(snd $1)(snd $3)) 
 }
-| Ident '.' Ident '(' ListExpr ')' {
-  (fst $1, AbsLatte.EMet (fst $1)(snd $1)(snd $3)(snd $5)) 
-}
 | String {
   (fst $1, AbsLatte.EString (fst $1)(snd $1)) 
 }
-| '(' Expr ')' {
-  (Just (tokenLineCol $1), snd $2)
+| Expr7 {
+  (fst $1, snd $1)
 }
 
 Expr5 :: {

@@ -75,7 +75,6 @@ litI32 = intLit 32
 litI8  = intLit 8
 litI1  = intLit 1
 
--- TODO class
 operandType :: Operand -> Type
 operandType (Reg t _) = t
 operandType (ConstOperand c) = constType c

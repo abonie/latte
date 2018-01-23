@@ -34,11 +34,10 @@ instance Typeable t => Typeable (Expr t) where
         ELitInt _ _ -> pInt
         ELitTrue _ -> pBool
         ELitFalse _ -> pBool
-        ENew _ ident -> TCls nopos ident
+        ENew t _ -> typeOf t
         ENull _ ident -> TCls nopos ident
         EArr _ typ _ -> Arr nopos $ rmpos typ
         EApp t _ _ -> typeOf t
-        EMet t _ _ _ -> typeOf t
         EString _ _ -> pStr
         Neg _ _ -> pInt
         Not _ _ -> pBool

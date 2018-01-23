@@ -28,7 +28,7 @@ testCases = [
     ("test5.lat", isTypeMismatch pInt pVoid, "throws"),
     ("test6.lat", isNoReturn, "throws"),
     ("badfun.lat", isMultipleDeclarations, "throws"),
-    ("bad2da.lat", isTypeMismatch pInt (pArr pInt), "throws"),
+    ("bad2da.lat", isTypeMismatch pInt (pArr pInt), "throws when given 2d array declaration"),
     ("bad003.lat", isMultipleDeclarations, "throws"),
     ("bad007.lat", isMultipleDeclarations, "throws"),
     ("bad008.lat", isNoReturn, "throws"),
