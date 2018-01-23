@@ -13,7 +13,7 @@ data TopDef
     = FunDef Type Ident [Arg] [Instr]
     | FunDec Type Ident [Type]
     | ConstDef Ident Type Constant
-    -- | TypeDef Ident Type
+    | TypeDef Ident Type
   deriving (Eq, Ord, Show, Read)
 
 data Arg = Arg Type Ident
@@ -61,6 +61,7 @@ data Type
     | Ptr Type
     | TLabel  -- TODO ugly name
     | Struct [Type]
+    | NamedType Ident
   deriving (Eq, Ord, Show, Read)
 
 i1  = I 1

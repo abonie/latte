@@ -22,6 +22,8 @@ printTopDef (FunDec typ ident args) = "declare" <+> (printType typ)
 printTopDef (ConstDef name typ init) = '@':(printIdent name) <=> "constant" <+> (printType typ)
                                                                         <+> (printConst init)
 
+printTopDef (TypeDef name typ) = (printIdent name) <=> "type" <+> (printType typ)
+
 
 printType :: Type -> String
 printType (I n) = 'i':(show n)
@@ -30,6 +32,7 @@ printType (Array size typ) = "[" ++ (show size) <+> "x" <+> printType typ ++ "]"
 printType (Ptr typ) = (printType typ) ++ "*"
 printType TLabel = "label"
 printType (Struct types) = '{':(intercalate ", " $ map printType types) ++ "}"
+printType (NamedType ident) = printIdent ident
 
 
 printIdent :: Ident -> String

@@ -18,6 +18,7 @@ class Monad m => MonadCodeGen m where
     newLabel :: m LLVM.Ident
     newReg :: m LLVM.Ident
     addDecl :: LLVM.TopDef -> m ()
+    getNamedType :: LLVM.Ident -> m LLVM.Type
     addStr :: String -> LLVM.Ident -> m LLVM.Operand
     callStrlen :: LLVM.Operand -> m LLVM.Operand
     addVar :: Type (PosInfo, TypeInfo) -> Ident -> PosInfo -> m ()
@@ -102,6 +103,14 @@ instance MonadCodeGen LLGen where
     addDecl d = do
         declarations <- gets decls
         modify $ \s -> s { decls = d:declarations }
+
+    getNamedType name = do
+        declarations <- gets decls
+        let find elem = case elem of {
+            LLVM.TypeDef ident _ | ident == name -> True ;
+            _ -> False }
+        let [LLVM.TypeDef _ typ] = filter find declarations
+        return typ
 
     addStr str r = do
         n <- gets count
@@ -193,9 +202,8 @@ instance MonadCodeGen LLGen where
         l <- gets label
         return l
 
-    convertType typ = do
-        tenv <- gets typeEnv
-        return $ typeToLLVM tenv typ
+    -- TODO redundant
+    convertType typ = return $ typeToLLVM typ
 
     runGen te llgen = let (res, state) = runState (runExceptT llgen) (newEnv te) in
         either Left (const $ Right $ envToModule state) res
@@ -205,20 +213,19 @@ envToModule :: Env -> LLVM.Module
 envToModule env = let
     mkFunDef (ident@(Ident name), instrs) = let
             Just (ret, args) = Map.lookup ident (signs env)
-            args' = map (argToLLVM $ typeEnv env) args in
-        LLVM.FunDef (typeToLLVM (typeEnv env) ret) (LLVM.Ident ('@':name)) args' (reverse instrs) in
+            args' = map argToLLVM args in
+        LLVM.FunDef (typeToLLVM ret) (LLVM.Ident ('@':name)) args' (reverse instrs) in
     LLVM.Module $ (decls env) ++ map mkFunDef (Map.assocs $ code env)
 
 
-typeToLLVM :: TypeEnv -> Type a -> LLVM.Type
-typeToLLVM _ (Int _) = LLVM.i64
-typeToLLVM _ (Bool _) = LLVM.i1
-typeToLLVM _ (Void _) = LLVM.Void
-typeToLLVM _ (Str _) = LLVM.Ptr LLVM.i8
-typeToLLVM env (Arr _ t) = LLVM.Struct [LLVM.Ptr $ typeToLLVM env t, LLVM.i64]
-typeToLLVM env (TCls _ name) = case Map.lookup name env of
-    Nothing -> error "should not happen"
-    Just (_, members) -> LLVM.Ptr $ LLVM.Struct $ map (\(_, typ) -> typeToLLVM env typ) members
+typeToLLVM :: Type a -> LLVM.Type
+typeToLLVM (Int _) = LLVM.i64
+typeToLLVM (Bool _) = LLVM.i1
+typeToLLVM (Void _) = LLVM.Void
+typeToLLVM (Str _) = LLVM.Ptr LLVM.i8
+typeToLLVM (Arr _ t) = LLVM.Struct [LLVM.Ptr $ typeToLLVM t, LLVM.i64]
+typeToLLVM (TCls _ (Ident name)) =
+    LLVM.Ptr $ LLVM.NamedType $ LLVM.Ident $ "%struct." ++ name
 
-argToLLVM :: TypeEnv -> Arg a -> LLVM.Arg
-argToLLVM env (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM env typ) (LLVM.Ident $ '%':name)
+argToLLVM :: Arg a -> LLVM.Arg
+argToLLVM (Arg _ typ (Ident name)) = LLVM.Arg (typeToLLVM typ) (LLVM.Ident $ '%':name)
